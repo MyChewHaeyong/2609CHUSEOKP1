@@ -8,24 +8,63 @@
   :root{ --bg:#1E1B3A; --panel:#262048; --gold:#D9A441; --red:#C0392B; --cream:#F4E9D8; --line:#3A3466; --ok:#4E9F63; }
   *{box-sizing:border-box}
   body{margin:0; min-height:100vh; background:var(--bg); color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif;}
-  .wrap{max-width:480px; margin:0 auto; padding:28px 18px 60px}
+  .wrap{max-width:520px; margin:0 auto; padding:24px 14px 60px}
   h1{color:var(--gold); font-size:22px; margin:0 0 4px}
+  h2{color:var(--gold); font-size:14.5px; margin:0 0 10px; letter-spacing:.02em}
   p.sub{color:#cfcbea; font-size:13px; margin:0 0 22px}
-  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:14px}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px}
   label{display:block; font-size:13px; color:#cfcbea; margin-bottom:6px}
   input[type=text]{width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#1a1733; color:var(--cream); font-size:15px; margin-bottom:12px}
-  button{width:100%; padding:11px; border-radius:8px; border:none; background:var(--gold); color:#1E1B3A; font-weight:700; font-size:14.5px; cursor:pointer}
+  select{width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#1a1733; color:var(--cream); font-size:15px; margin-bottom:12px}
+  button{width:100%; padding:11px; border-radius:8px; border:none; background:var(--gold); color:#1E1B3A; font-weight:700; font-size:14.5px; cursor:pointer; margin-bottom:8px}
   button.secondary{background:transparent; border:1px solid var(--gold); color:var(--gold)}
-  button:disabled{opacity:.5; cursor:default}
-  .room-code{font-size:28px; font-weight:700; letter-spacing:.08em; color:var(--gold); text-align:center; margin:6px 0 2px}
+  button.danger{background:var(--red); color:#fff}
+  button:disabled{opacity:.45; cursor:default}
+  .btnrow{display:flex; gap:8px}
+  .btnrow button{margin-bottom:0}
+  .room-code{font-size:26px; font-weight:700; letter-spacing:.08em; color:var(--gold); text-align:center; margin:2px 0 2px}
   .row{display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px}
   .row:last-child{border-bottom:none}
   .dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:8px; background:#666}
   .dot.on{background:var(--ok)}
   .me{color:var(--gold); font-weight:700}
-  .status-line{font-size:12.5px; color:#9d97c2; text-align:center; margin-top:10px}
+  .status-line{font-size:12.5px; color:#9d97c2; text-align:center; margin-top:8px}
   .err{color:#ff9a8c; font-size:13px; margin-top:8px}
   .hidden{display:none}
+
+  .turn-banner{background:#1a1733; border:1px solid var(--gold); border-radius:10px; padding:12px 14px; text-align:center; margin-bottom:12px}
+  .turn-banner .who{font-size:16.5px; font-weight:700; color:var(--gold)}
+  .turn-banner .what{font-size:12.5px; color:#cfcbea; margin-top:3px}
+  .mystats{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px}
+  .stat{background:#1a1733; border:1px solid var(--line); border-radius:8px; padding:9px 11px}
+  .stat .lbl{font-size:11px; color:#9d97c2}
+  .stat .val{font-size:16px; font-weight:700; color:var(--cream); margin-top:2px}
+  .timerbar{display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#9d97c2; margin-bottom:10px}
+  .timerbar.hot{color:#ff9a8c; font-weight:700}
+
+  .tilecard{background:#1a1733; border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px}
+  .tilecard .tname{font-size:17px; font-weight:700; color:var(--cream)}
+  .tilecard .tinfo{font-size:12.5px; color:#9d97c2; margin-top:4px; line-height:1.6}
+
+  .boardlist{max-height:260px; overflow-y:auto; border:1px solid var(--line); border-radius:8px}
+  .tilerow{display:flex; align-items:center; gap:8px; padding:7px 10px; border-bottom:1px solid var(--line); font-size:12.5px}
+  .tilerow:last-child{border-bottom:none}
+  .tilerow.here{background:color-mix(in srgb, var(--gold) 15%, transparent)}
+  .tilerow .swatch{width:8px; height:8px; border-radius:50%; flex:0 0 auto}
+  .tilerow .tn{flex:1; color:var(--cream)}
+  .tilerow .owner{color:#9d97c2; white-space:nowrap}
+  .tilerow .owner.mine{color:var(--gold)}
+
+  .proprow{display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px}
+  .proprow:last-child{border-bottom:none}
+  .proprow .pn{flex:1}
+  .proprow button{width:auto; padding:6px 10px; font-size:12px; margin:0 0 0 6px}
+
+  .ranktable{width:100%; border-collapse:collapse; font-size:13.5px}
+  .ranktable th, .ranktable td{padding:8px 6px; text-align:left; border-bottom:1px solid var(--line)}
+  .ranktable th{color:#9d97c2; font-weight:600; font-size:11.5px}
+  .ranktable td.num{text-align:right; font-variant-numeric:tabular-nums}
+  .loglist{max-height:140px; overflow-y:auto; font-size:12px; color:#9d97c2; line-height:1.8}
 </style>
 </head>
 <body>
@@ -43,17 +82,77 @@
     <div id="joinErr" class="err hidden"></div>
   </div>
 
-  <div id="gamePanel" class="panel hidden">
-    <div class="room-code" id="roomCodeDisplay">----</div>
-    <div id="adminKeyBox" class="hidden" style="background:#1a1733; border:1px solid var(--gold); border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:12.5px; color:#cfcbea">
-      이 방을 만드신 분만 보면 됩니다 — 관리자 화면(admin.html)에 입력할 관리자 키입니다.<br/>
-      <span id="adminKeyText" style="color:var(--gold); font-weight:700; letter-spacing:.03em; word-break:break-all"></span>
+  <div id="gamePanel" class="hidden">
+
+    <div class="panel">
+      <div class="room-code" id="roomCodeDisplay">----</div>
+      <div id="adminKeyBox" class="hidden" style="background:#1a1733; border:1px solid var(--gold); border-radius:8px; padding:10px 12px; margin:10px 0; font-size:12.5px; color:#cfcbea">
+        이 방을 만드신 분만 보면 됩니다 — 관리자 화면(admin.html)에 입력할 관리자 키입니다.<br/>
+        <span id="adminKeyText" style="color:var(--gold); font-weight:700; letter-spacing:.03em; word-break:break-all"></span>
+      </div>
+      <div class="status-line" id="phaseLine">대기 중</div>
+      <div id="playerList" style="margin-top:12px"></div>
     </div>
-    <div class="status-line" id="phaseLine">대기 중</div>
-    <div id="playerList" style="margin-top:14px"></div>
-    <button id="pingBtn" class="secondary" style="margin-top:14px">동기화 테스트 (핑 보내기)</button>
+
+    <!-- 대기 중 + 방장(관리자키 보유자)에게만 보이는 게임 시작 컨트롤 -->
+    <div id="startPanel" class="panel hidden">
+      <h2>게임 시작</h2>
+      <label for="totalPlayersSelect">전체 인원 수 (남은 자리는 BOT이 채웁니다)</label>
+      <select id="totalPlayersSelect">
+        <option value="2">2명</option>
+        <option value="3">3명</option>
+        <option value="4" selected>4명</option>
+      </select>
+      <button id="startGameBtn">게임 시작</button>
+      <div id="startMsg" class="err hidden"></div>
+    </div>
+
+    <!-- 진행/종료 중 게임 화면 -->
+    <div id="gameBoard" class="hidden">
+      <div class="timerbar" id="timerBar">경과 시간 -</div>
+      <div class="turn-banner">
+        <div class="who" id="turnWho">-</div>
+        <div class="what" id="turnWhat">-</div>
+      </div>
+      <div class="mystats">
+        <div class="stat"><div class="lbl">내 자금</div><div class="val" id="myCash">-</div></div>
+        <div class="stat"><div class="lbl">내 위치</div><div class="val" id="myPos">-</div></div>
+        <div class="stat"><div class="lbl">송편 토큰</div><div class="val" id="mySongpyeon">-</div></div>
+        <div class="stat"><div class="lbl">보유 아이템</div><div class="val" id="myItems">-</div></div>
+      </div>
+
+      <div class="panel hidden" id="actionPanel">
+        <h2>내 차례</h2>
+        <div id="actionArea"></div>
+        <div id="actionMsg" class="err hidden"></div>
+      </div>
+
+      <div class="panel hidden" id="myPropsPanel">
+        <h2>내 소유 도시 (턴 종료 전 건설/매각 가능)</h2>
+        <div id="myPropsList"></div>
+      </div>
+
+      <div class="panel hidden" id="rankPanel">
+        <h2>게임 종료 · 최종 순위</h2>
+        <table class="ranktable">
+          <thead><tr><th>순위</th><th>이름</th><th>순자산</th><th>송편</th></tr></thead>
+          <tbody id="rankBody"></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>보드 현황</h2>
+        <div class="boardlist" id="boardList"></div>
+      </div>
+
+      <div class="panel">
+        <h2>진행 기록</h2>
+        <div class="loglist" id="logList"></div>
+      </div>
+    </div>
+
     <div class="status-line" id="pollLine"></div>
-    <button id="leaveBtn" class="secondary" style="margin-top:18px; border-color:var(--red); color:#ff9a8c">이 방 나가기 / 다른 방 만들기</button>
+    <button id="leaveBtn" class="secondary" style="margin-top:14px; border-color:var(--red); color:#ff9a8c">이 방 나가기 / 다른 방 만들기</button>
   </div>
 </div>
 
@@ -61,6 +160,36 @@
   const $ = (id) => document.getElementById(id);
   let session = null; // { roomCode, playerId, token }
   let pollTimer = null;
+  let myAdminKey = null;
+  let busy = false; // 액션 처리 중 중복 클릭 방지
+
+  const REGION_COLOR = { cc:"#4E7D57", jl:"#B0602F", gs:"#385E92", sd:"#95315A", jj:"#1E7C70" };
+  // game.js의 TILES와 동일한 보드 정보(표시용). 서버 상태(state.properties)와 합쳐서 렌더링합니다.
+  const TILES = [
+    { pos:0, name:"귀성길 출발", type:"start" },
+    { pos:1, name:"대전", type:"city", region:"cc", price:30000 },
+    { pos:2, name:"세종", type:"city", region:"cc", price:35000 },
+    { pos:3, name:"전통시장", type:"event", eventType:"market" },
+    { pos:4, name:"청주", type:"city", region:"cc", price:40000 },
+    { pos:5, name:"친척집", type:"event", eventType:"relative" },
+    { pos:6, name:"광주", type:"city", region:"jl", price:45000 },
+    { pos:7, name:"전주", type:"city", region:"jl", price:50000 },
+    { pos:8, name:"고속도로 정체", type:"event", eventType:"traffic" },
+    { pos:9, name:"목포", type:"city", region:"jl", price:58000 },
+    { pos:10, name:"송편가게", type:"event", eventType:"songpyeon" },
+    { pos:11, name:"부산", type:"city", region:"gs", price:65000 },
+    { pos:12, name:"대구", type:"city", region:"gs", price:72000 },
+    { pos:13, name:"달토끼 상점", type:"event", eventType:"shop" },
+    { pos:14, name:"울산", type:"city", region:"gs", price:85000 },
+    { pos:15, name:"복불복 윷판", type:"event", eventType:"yut" },
+    { pos:16, name:"제주", type:"city", region:"jj", price:150000 },
+    { pos:17, name:"인천", type:"city", region:"sd", price:95000 },
+    { pos:18, name:"친척집", type:"event", eventType:"relative" },
+    { pos:19, name:"수원", type:"city", region:"sd", price:105000 },
+    { pos:20, name:"서울", type:"city", region:"sd", price:130000 },
+  ];
+  const ITEM_LABEL = { "toll-free":"통행료 면제권", reroll:"주사위 재굴림권", "half-build":"건설비 반값권" };
+  const fmt = (n) => (n || 0).toLocaleString("ko-KR");
 
   function loadSession() {
     try {
@@ -78,6 +207,9 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.ok === false) throw new Error(data.error || ("요청 실패 (" + res.status + ")"));
     return data;
+  }
+  function newReqId() {
+    return (crypto.randomUUID ? crypto.randomUUID() : "r-" + Date.now() + "-" + Math.random());
   }
 
   async function createRoom() {
@@ -118,9 +250,9 @@
     $("joinPanel").classList.add("hidden");
     $("gamePanel").classList.remove("hidden");
     $("roomCodeDisplay").textContent = session.roomCode;
-    const adminKey = localStorage.getItem("paldomarble_adminkey_" + session.roomCode);
-    if (adminKey) {
-      $("adminKeyText").textContent = adminKey;
+    myAdminKey = localStorage.getItem("paldomarble_adminkey_" + session.roomCode);
+    if (myAdminKey) {
+      $("adminKeyText").textContent = myAdminKey;
       $("adminKeyBox").classList.remove("hidden");
     }
     poll();
@@ -132,12 +264,36 @@
       const data = await api(
         "/api/rooms/" + session.roomCode + "/state?playerId=" + session.playerId + "&token=" + session.token
       );
-      $("phaseLine").textContent = data.status === "waiting" ? "대기 중 · 참가자를 기다리고 있어요" : data.status;
-      renderPlayers(data.players);
+      renderAll(data);
       $("pollLine").textContent = "마지막 동기화: " + new Date(data.serverTime).toLocaleTimeString("ko-KR");
     } catch (e) {
       $("pollLine").textContent = "연결 확인 중... (" + e.message + ")";
     }
+  }
+
+  function renderAll(data) {
+    renderPlayers(data.players);
+
+    const status = data.status;
+    $("startPanel").classList.toggle("hidden", !(status === "waiting" && myAdminKey));
+    $("gameBoard").classList.toggle("hidden", status === "waiting");
+
+    if (status === "waiting") {
+      $("phaseLine").textContent = "대기 중 · 참가자를 기다리고 있어요 (" + data.players.length + "명 입장)";
+      return;
+    }
+    $("phaseLine").textContent = status === "ended" ? "게임 종료" : "게임 진행 중";
+
+    const state = data.state;
+    if (!state || !state.players) return;
+    renderTimer(state, data.serverTime);
+    renderTurn(state, data.players);
+    renderMyStats(state);
+    renderActionPanel(state);
+    renderMyProps(state);
+    renderBoard(state);
+    renderLog(state);
+    renderRanking(state);
   }
 
   function renderPlayers(players) {
@@ -148,11 +304,246 @@
       row.className = "row";
       const isMe = p.id === session.playerId;
       row.innerHTML =
-        '<span><span class="dot ' + (p.connected ? "on" : "") + '"></span>' +
-        '<span class="' + (isMe ? "me" : "") + '">' + p.name + (isMe ? " (나)" : "") + "</span></span>" +
+        '<span><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' +
+        '<span class="' + (isMe ? "me" : "") + '">' + p.name + (isMe ? " (나)" : "") + (p.isBot ? " · BOT" : "") + "</span></span>" +
         "<span>#" + (p.seat + 1) + "</span>";
       el.appendChild(row);
     });
+  }
+
+  function renderTimer(state, serverTime) {
+    const bar = $("timerBar");
+    if (!state.gameStartedAt) { bar.textContent = "경과 시간 - (첫 주사위를 굴리면 시작)"; bar.classList.remove("hot"); return; }
+    const elapsedMs = serverTime - state.gameStartedAt;
+    const mins = Math.floor(elapsedMs / 60000);
+    const secs = Math.floor((elapsedMs % 60000) / 1000);
+    const hot = elapsedMs > 90 * 60 * 1000;
+    bar.textContent = "경과 시간 " + String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0") +
+      (hot ? " · 통행료 2배 인상 중" : "");
+    bar.classList.toggle("hot", hot);
+  }
+
+  function renderTurn(state, players) {
+    if (state.phase === "ended") {
+      $("turnWho").textContent = "게임 종료";
+      $("turnWhat").textContent = "아래 최종 순위를 확인하세요";
+      return;
+    }
+    const cur = state.players[state.currentPlayerId];
+    const isMe = state.currentPlayerId === session.playerId;
+    $("turnWho").textContent = (cur ? cur.name : "-") + (isMe ? " (나)" : "");
+    const phaseLabel = {
+      "awaiting-roll": "주사위를 굴릴 차례",
+      "awaiting-buy": "도시 구매를 결정할 차례",
+      "awaiting-event": "이벤트를 처리할 차례",
+      "awaiting-endturn": "턴을 마무리할 차례",
+    }[state.turnPhase] || state.turnPhase;
+    $("turnWhat").textContent = phaseLabel;
+  }
+
+  function renderMyStats(state) {
+    const me = state.players[session.playerId];
+    if (!me) { $("myCash").textContent = "-"; return; }
+    $("myCash").textContent = fmt(me.cash) + " 엽전";
+    $("myPos").textContent = TILES[me.position] ? TILES[me.position].name : "-";
+    $("mySongpyeon").textContent = (me.songpyeon || 0) + "개";
+    $("myItems").textContent = me.items && me.items.length
+      ? me.items.map((i) => ITEM_LABEL[i] || i).join(", ")
+      : "없음";
+  }
+
+  function renderActionPanel(state) {
+    const panel = $("actionPanel");
+    const isMyTurn = state.phase === "playing" && state.currentPlayerId === session.playerId;
+    panel.classList.toggle("hidden", !isMyTurn);
+    if (!isMyTurn) return;
+
+    const area = $("actionArea");
+    area.innerHTML = "";
+    $("actionMsg").classList.add("hidden");
+    const me = state.players[session.playerId];
+
+    if (state.turnPhase === "awaiting-roll") {
+      area.appendChild(makeBtn("🎲 주사위 굴리기", () => sendAction("roll-dice", {})));
+    } else if (state.turnPhase === "awaiting-buy") {
+      const tile = TILES[me.position];
+      const card = document.createElement("div");
+      card.className = "tilecard";
+      card.innerHTML = '<div class="tname">' + tile.name + '</div><div class="tinfo">구매가 ' + fmt(tile.price) + " 엽전 · 보유 자금 " + fmt(me.cash) + " 엽전</div>";
+      area.appendChild(card);
+      const row = document.createElement("div");
+      row.className = "btnrow";
+      const buyBtn = makeBtn("구매하기", () => sendAction("buy-property", {}));
+      if (me.cash < tile.price) buyBtn.disabled = true;
+      row.appendChild(buyBtn);
+      row.appendChild(makeBtn("구매 안 함", () => sendAction("skip-buy", {}), true));
+      area.appendChild(row);
+    } else if (state.turnPhase === "awaiting-event" && state.pendingEvent) {
+      area.appendChild(renderEventArea(state));
+    } else if (state.turnPhase === "awaiting-endturn") {
+      area.appendChild(makeBtn("턴 종료", () => sendAction("end-turn", {})));
+      if (me.items && me.items.includes("reroll")) {
+        area.appendChild(makeBtn("주사위 재굴림권 사용", () => sendAction("use-item", { item: "reroll" }), true));
+      }
+    }
+  }
+
+  function renderEventArea(state) {
+    const ev = state.pendingEvent;
+    const wrap = document.createElement("div");
+    if (ev.type === "market") {
+      const card = document.createElement("div");
+      card.className = "tilecard";
+      card.innerHTML = '<div class="tname">전통시장 카드 뒤집기</div><div class="tinfo">3장 중 1장을 골라 뒤집으세요. 결과가 바로 적용됩니다.</div>';
+      wrap.appendChild(card);
+      const row = document.createElement("div");
+      row.className = "btnrow";
+      [0, 1, 2].forEach((idx) => {
+        row.appendChild(makeBtn("카드 " + (idx + 1), () => sendAction("resolve-event", { choice: idx })));
+      });
+      wrap.appendChild(row);
+    } else if (ev.type === "relative") {
+      const card = document.createElement("div");
+      card.className = "tilecard";
+      card.innerHTML = '<div class="tname">친척집 미션</div><div class="tinfo">' + ev.mission + '</div>';
+      wrap.appendChild(card);
+      const row = document.createElement("div");
+      row.className = "btnrow";
+      row.appendChild(makeBtn("수행하고 보상 받기", () => sendAction("resolve-event", { choice: "perform" })));
+      row.appendChild(makeBtn("패스", () => sendAction("resolve-event", { choice: "pass" }), true));
+      wrap.appendChild(row);
+    } else if (ev.type === "shop") {
+      const card = document.createElement("div");
+      card.className = "tilecard";
+      card.innerHTML = '<div class="tname">달토끼 상점</div><div class="tinfo">15,000 엽전으로 아이템 하나를 살 수 있어요.</div>';
+      wrap.appendChild(card);
+      ["toll-free", "reroll", "half-build"].forEach((item) => {
+        wrap.appendChild(makeBtn(ITEM_LABEL[item] + " 구매", () => sendAction("resolve-event", { choice: item })));
+      });
+      wrap.appendChild(makeBtn("패스", () => sendAction("resolve-event", { choice: "pass" }), true));
+    }
+    return wrap;
+  }
+
+  function renderMyProps(state) {
+    const panel = $("myPropsPanel");
+    const isMyTurn = state.phase === "playing" && state.currentPlayerId === session.playerId && state.turnPhase === "awaiting-endturn";
+    const myPositions = Object.keys(state.properties || {})
+      .map(Number)
+      .filter((pos) => state.properties[pos].ownerId === session.playerId);
+    panel.classList.toggle("hidden", !isMyTurn || myPositions.length === 0);
+    if (!isMyTurn || myPositions.length === 0) return;
+
+    const list = $("myPropsList");
+    list.innerHTML = "";
+    myPositions.forEach((pos) => {
+      const tile = TILES[pos];
+      const prop = state.properties[pos];
+      const ownsRegionAll = TILES.filter((t) => t.type === "city" && t.region === tile.region)
+        .every((t) => state.properties[t.pos] && state.properties[t.pos].ownerId === session.playerId);
+      const row = document.createElement("div");
+      row.className = "proprow";
+      const buildLabel = prop.building === "hotel" ? "호텔" : prop.building === "villa" ? "별장" : "빈 땅";
+      row.innerHTML = '<span class="pn">' + tile.name + " (" + buildLabel + ")</span>";
+      if (ownsRegionAll && prop.building === "none") {
+        row.appendChild(makeSmallBtn("별장 건설", () => sendAction("build", { tilePos: pos, level: "villa" })));
+      } else if (ownsRegionAll && prop.building === "villa") {
+        row.appendChild(makeSmallBtn("호텔 건설", () => sendAction("build", { tilePos: pos, level: "hotel" })));
+      }
+      row.appendChild(makeSmallBtn("매각", () => sendAction("sell-property", { tilePos: pos }), true));
+      list.appendChild(row);
+    });
+  }
+
+  function renderBoard(state) {
+    const el = $("boardList");
+    el.innerHTML = "";
+    const posToPlayers = {};
+    Object.entries(state.players).forEach(([pid, p]) => {
+      if (p.bankrupt) return;
+      (posToPlayers[p.position] = posToPlayers[p.position] || []).push(p.name);
+    });
+    TILES.forEach((tile) => {
+      const row = document.createElement("div");
+      const here = (posToPlayers[tile.pos] || []).length > 0;
+      row.className = "tilerow" + (here ? " here" : "");
+      const color = tile.type === "city" ? REGION_COLOR[tile.region] : (tile.type === "start" ? "#D9A441" : "#6C5D8A");
+      let ownerLabel = "";
+      if (tile.type === "city") {
+        const prop = state.properties[tile.pos];
+        if (prop) {
+          const ownerName = state.players[prop.ownerId] ? state.players[prop.ownerId].name : "?";
+          const buildTag = prop.building === "hotel" ? " 호텔" : prop.building === "villa" ? " 별장" : "";
+          ownerLabel = ownerName + buildTag;
+        } else {
+          ownerLabel = fmt(tile.price);
+        }
+      }
+      const mine = tile.type === "city" && state.properties[tile.pos] && state.properties[tile.pos].ownerId === session.playerId;
+      row.innerHTML =
+        '<span class="swatch" style="background:' + color + '"></span>' +
+        '<span class="tn">' + tile.pos + ". " + tile.name + (here ? " · " + posToPlayers[tile.pos].join(",") : "") + "</span>" +
+        '<span class="owner' + (mine ? " mine" : "") + '">' + ownerLabel + "</span>";
+      el.appendChild(row);
+    });
+  }
+
+  function renderLog(state) {
+    const el = $("logList");
+    el.innerHTML = "";
+    (state.log || []).slice(-25).reverse().forEach((line) => {
+      const d = document.createElement("div");
+      d.textContent = line;
+      el.appendChild(d);
+    });
+  }
+
+  function renderRanking(state) {
+    const panel = $("rankPanel");
+    const show = state.phase === "ended" && Array.isArray(state.finalRanking);
+    panel.classList.toggle("hidden", !show);
+    if (!show) return;
+    const body = $("rankBody");
+    body.innerHTML = "";
+    state.finalRanking.forEach((r) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>" + r.rank + "위</td><td>" + r.name + (r.playerId === session.playerId ? " (나)" : "") + "</td>" +
+        '<td class="num">' + fmt(r.netWorth) + "</td>" +
+        '<td class="num">' + (r.songpyeon || 0) + "</td>";
+      body.appendChild(tr);
+    });
+  }
+
+  function makeBtn(label, onClick, secondary) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    if (secondary) b.className = "secondary";
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function makeSmallBtn(label, onClick, secondary) {
+    const b = makeBtn(label, onClick, secondary);
+    return b;
+  }
+
+  async function sendAction(type, payload) {
+    if (busy) return;
+    busy = true;
+    $("actionMsg").classList.add("hidden");
+    try {
+      await api("/api/rooms/" + session.roomCode + "/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: newReqId(), playerId: session.playerId, token: session.token, type, payload }),
+      });
+      await poll(); // 최신 상태(전체 players 목록 포함)를 다시 받아와 화면을 갱신
+    } catch (e) {
+      $("actionMsg").textContent = e.message;
+      $("actionMsg").classList.remove("hidden");
+    } finally {
+      busy = false;
+    }
   }
 
   $("createBtn").addEventListener("click", () => createRoom().catch((e) => showErr(e.message)));
@@ -167,21 +558,18 @@
     $("gamePanel").classList.add("hidden");
     $("joinPanel").classList.remove("hidden");
   });
-  $("pingBtn").addEventListener("click", async () => {
+  $("startGameBtn").addEventListener("click", async () => {
+    $("startMsg").classList.add("hidden");
     try {
-      await api("/api/rooms/" + session.roomCode + "/action", {
+      await api("/api/rooms/" + session.roomCode + "/admin/start-game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestId: crypto.randomUUID(),
-          playerId: session.playerId,
-          token: session.token,
-          type: "ping",
-          payload: {},
-        }),
+        body: JSON.stringify({ adminKey: myAdminKey, totalPlayers: Number($("totalPlayersSelect").value) }),
       });
+      poll();
     } catch (e) {
-      showErr(e.message);
+      $("startMsg").textContent = e.message;
+      $("startMsg").classList.remove("hidden");
     }
   });
 
