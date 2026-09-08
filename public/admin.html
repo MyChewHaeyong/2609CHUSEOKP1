@@ -48,6 +48,26 @@
     <button id="refreshBtn" class="secondary" style="margin-top:10px">지금 새로고침</button>
   </div>
 
+  <div class="panel" id="startPanel">
+    <h2>게임 시작 (인원수 설정)</h2>
+    <p style="font-size:12.5px;color:#9d97c2;margin:0 0 10px">대기 중일 때만 사용할 수 있습니다. 지금까지 입장한 사람 수보다 적게 설정할 수 없고, 남은 자리는 BOT이 자동으로 채웁니다.</p>
+    <label>전체 인원 수</label>
+    <select id="totalPlayers">
+      <option value="2">2명</option>
+      <option value="3">3명</option>
+      <option value="4" selected>4명</option>
+    </select>
+    <button id="startGameBtn">게임 시작</button>
+    <div id="startMsg" class="msg"></div>
+  </div>
+
+  <div class="panel" id="forceEndPanel">
+    <h2>비상 강제 종료</h2>
+    <p style="font-size:12.5px;color:#9d97c2;margin:0 0 10px">방송 시간이 다 되어 "최후 1인 생존"을 기다릴 수 없을 때, 지금 이 순간의 자산(현금+토지+건물 평가액) 기준으로 순위를 확정하고 게임을 끝냅니다. 되돌리기로 취소할 수 있습니다.</p>
+    <button id="forceEndBtn" class="danger">지금 강제 종료하고 순위 정산</button>
+    <div id="forceEndMsg" class="msg"></div>
+  </div>
+
   <div class="panel">
     <h2>복구 도구</h2>
     <button id="undoBtn" class="danger">한 단계 되돌리기</button>
@@ -150,6 +170,43 @@
     $("loadMsg").textContent = "연결되었습니다. 2초마다 자동으로 새로고침합니다.";
   });
   $("refreshBtn").addEventListener("click", refresh);
+
+  $("startGameBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    try {
+      const data = await api("/api/rooms/" + code + "/admin/start-game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key, totalPlayers: Number($("totalPlayers").value) }),
+      });
+      $("startMsg").textContent = "게임을 시작했습니다. 참가자 " + data.players.length + "명 (부족한 자리는 BOT으로 채워짐).";
+      $("startMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("startMsg").textContent = "게임 시작 실패: " + e.message;
+      $("startMsg").classList.add("err");
+    }
+  });
+
+  $("forceEndBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    try {
+      const data = await api("/api/rooms/" + code + "/admin/force-end", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key }),
+      });
+      const ranking = (data.state.finalRanking || [])
+        .map((r) => `${r.rank}위 ${r.name} (순자산 ${r.netWorth.toLocaleString()})`)
+        .join(" · ");
+      $("forceEndMsg").textContent = "강제 종료 완료. " + ranking;
+      $("forceEndMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("forceEndMsg").textContent = "강제 종료 실패: " + e.message;
+      $("forceEndMsg").classList.add("err");
+    }
+  });
 
   $("undoBtn").addEventListener("click", async () => {
     const { code, key } = creds();
