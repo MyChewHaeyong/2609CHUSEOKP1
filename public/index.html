@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>한가위 만찬 경매전</title>
+<style>
+  :root{
+    --bg:#1E1B3A; --gold:#D9A441; --red:#C0392B; --cream:#F4E9D8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 20%, #2A2550 0%, var(--bg) 60%);
+    color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif; text-align:center;
+  }
+  .card{padding:48px 40px; max-width:520px}
+  h1{color:var(--gold); font-size:28px; margin-bottom:8px}
+  p{color:#cfcbea; line-height:1.6; font-size:15px}
+  .badge{
+    display:inline-block; margin-top:20px; padding:6px 14px; border:1px solid var(--gold);
+    border-radius:999px; font-size:13px; color:var(--gold);
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>한가위 만찬 경매전</h1>
+    <p>1부 게임 서버가 정상적으로 배포되었습니다.<br/>Player / Broadcast / Admin 화면은 곧 이어서 구현됩니다.</p>
+    <div class="badge">배포 파이프라인 연결 확인 완료</div>
+  </div>
+</body>
+</html>
