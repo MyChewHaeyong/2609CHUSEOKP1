@@ -5,6 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
 const Database = require("better-sqlite3");
+const Game = require("./game.js");
 
 const app = express();
 app.use(express.json());
@@ -193,7 +194,12 @@ app.post("/api/rooms/:code/action", (req, res) => {
   }
 
   touchPlayer(playerId);
-  const result = applyAction(room, player, type, payload || {});
+  let result;
+  try {
+    result = applyAction(room, player, type, payload || {});
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: e.message || "행동 처리 중 오류가 발생했습니다." });
+  }
 
   db.prepare(
     "INSERT INTO action_log (room_code, request_id, player_id, type, payload_json, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -202,24 +208,38 @@ app.post("/api/rooms/:code/action", (req, res) => {
   res.json({ ok: true, deduped: false, ...result });
 });
 
-// 공통 엔진 단계의 임시 액션 처리기. 지금은 "ping"만 실제로 있고,
-// 그 외 타입은 상태에 손대지 않고 정상 응답만 돌려줍니다(다음 단계에서 팔도마블 로직으로 대체).
+// 액션 처리기. "ping"은 공통 엔진 동기화 테스트용으로 그대로 유지하고,
+// 나머지 타입은 팔도마블 게임 로직(game.js)으로 넘깁니다.
+// 실패 시 여기서 Error를 던지면 위 라우트에서 잡아 400으로 깔끔하게 응답합니다.
 function applyAction(room, player, type, payload) {
   const state = JSON.parse(room.state_json);
   let stateChanged = false;
+  let newStatus = room.status;
 
   if (type === "ping") {
     state.lastPing = { by: player.name, at: now() };
     stateChanged = true;
+  } else if (room.game_mode === "paldomarble") {
+    if (state.phase === "waiting" || !state.phase) {
+      throw new Error("게임이 아직 시작되지 않았습니다. 관리자가 먼저 게임을 시작해야 합니다.");
+    }
+    if (state.phase === "ended") {
+      throw new Error("게임이 이미 종료되었습니다.");
+    }
+    Game.applyPlayerAction(state, player.id, type, payload, now());
+    stateChanged = true;
+    newStatus = state.phase === "ended" ? "ended" : "playing";
+  } else {
+    throw new Error("알 수 없는 행동입니다: " + type);
   }
-  // TODO(2단계): 'roll-dice' | 'buy-city' | 'build' | 'sell' | 'event-choice' | 'end-turn' 등을 여기에 구현
 
   if (stateChanged) {
     const newVersion = room.state_version + 1;
     const stateJson = JSON.stringify(state);
-    db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, updated_at = ? WHERE code = ?").run(
+    db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, status = ?, updated_at = ? WHERE code = ?").run(
       stateJson,
       newVersion,
+      newStatus,
       now(),
       room.code
     );
@@ -253,6 +273,96 @@ app.get("/api/rooms/:code/admin", (req, res) => {
   });
 });
 
+// 게임 시작: 관리자가 (필요시) 전체 인원수를 정하면, 남은 자리를 BOT으로 채우고
+// 팔도마블 게임 상태를 초기화합니다. 사람 참가자는 이미 참가한 순서대로 좌석을 유지합니다.
+const BOT_NAME_POOL = ["옆집아저씨봇", "떡방앗간봇", "송편요정봇", "한가위봇"];
+app.post("/api/rooms/:code/admin/start-game", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  if (room.game_mode !== "paldomarble") {
+    return res.status(400).json({ ok: false, error: "이 방은 팔도마블 방이 아닙니다." });
+  }
+
+  const state = JSON.parse(room.state_json);
+  if (state.phase === "playing" || state.phase === "ended") {
+    return res.status(400).json({ ok: false, error: "이미 게임이 시작되었습니다." });
+  }
+
+  let totalPlayers = Number(req.body?.totalPlayers) || 4;
+  totalPlayers = Math.max(2, Math.min(4, totalPlayers));
+
+  const humanPlayers = db
+    .prepare("SELECT * FROM players WHERE room_code = ? AND is_bot = 0 ORDER BY seat ASC")
+    .all(room.code);
+  if (humanPlayers.length < 1) {
+    return res.status(400).json({ ok: false, error: "참가자가 최소 1명 이상 있어야 게임을 시작할 수 있습니다." });
+  }
+  if (humanPlayers.length > totalPlayers) {
+    return res.status(400).json({
+      ok: false,
+      error: `참가 인원(${humanPlayers.length}명)이 설정한 전체 인원수(${totalPlayers}명)보다 많습니다.`,
+    });
+  }
+
+  let nextSeat = db.prepare("SELECT COALESCE(MAX(seat), -1) AS m FROM players WHERE room_code = ?").get(room.code).m + 1;
+  const botsNeeded = totalPlayers - humanPlayers.length;
+  const insertPlayer = db.prepare(
+    "INSERT INTO players (id, room_code, name, seat, is_bot, token, last_seen) VALUES (?, ?, ?, ?, 1, ?, ?)"
+  );
+  for (let i = 0; i < botsNeeded; i++) {
+    const botName = BOT_NAME_POOL[i % BOT_NAME_POOL.length] + (i >= BOT_NAME_POOL.length ? `${i + 1}` : "");
+    insertPlayer.run(crypto.randomUUID(), room.code, botName, nextSeat, genKey(), now());
+    nextSeat++;
+  }
+
+  const allPlayers = db.prepare("SELECT * FROM players WHERE room_code = ? ORDER BY seat ASC").all(room.code);
+  const gameState = Game.initState(allPlayers.map((p) => ({ id: p.id, name: p.name, seat: p.seat, isBot: !!p.is_bot })));
+  Game.runBotsIfNeeded(gameState, now());
+
+  const newVersion = room.state_version + 1;
+  const stateJson = JSON.stringify(gameState);
+  db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, status = 'playing', updated_at = ? WHERE code = ?").run(
+    stateJson,
+    newVersion,
+    now(),
+    room.code
+  );
+  saveSnapshot(room.code, newVersion, stateJson, "게임 시작");
+
+  res.json({ ok: true, stateVersion: newVersion, state: gameState, players: getPlayers(room.code).map(publicPlayer) });
+});
+
+// 비상 강제 종료: 방송 시간이 다 되어 "최후 1인 생존"을 기다릴 수 없을 때, 지금 이 순간의
+// 자산(현금+토지+건물 평가액) 기준으로 순위를 확정하고 게임을 끝냅니다. (규칙서 "결산 코드" 절 기준)
+app.post("/api/rooms/:code/admin/force-end", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  if (room.game_mode !== "paldomarble") {
+    return res.status(400).json({ ok: false, error: "이 방은 팔도마블 방이 아닙니다." });
+  }
+
+  const state = JSON.parse(room.state_json);
+  try {
+    Game.forceEndGame(state);
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: e.message || "종료 처리 중 오류가 발생했습니다." });
+  }
+
+  const newVersion = room.state_version + 1;
+  const stateJson = JSON.stringify(state);
+  db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, status = 'ended', updated_at = ? WHERE code = ?").run(
+    stateJson,
+    newVersion,
+    now(),
+    room.code
+  );
+  saveSnapshot(room.code, newVersion, stateJson, "관리자 강제 종료");
+
+  res.json({ ok: true, stateVersion: newVersion, state });
+});
+
 app.post("/api/rooms/:code/admin/undo", (req, res) => {
   const room = getRoom(req.params.code);
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
@@ -283,7 +393,12 @@ app.post("/api/rooms/:code/admin/emergency-action", (req, res) => {
   const player = db.prepare("SELECT * FROM players WHERE id = ? AND room_code = ?").get(asPlayerId, room.code);
   if (!player) return res.status(404).json({ ok: false, error: "대상 플레이어를 찾을 수 없습니다." });
 
-  const result = applyAction(room, player, type, payload || {});
+  let result;
+  try {
+    result = applyAction(room, player, type, payload || {});
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: e.message || "행동 처리 중 오류가 발생했습니다." });
+  }
   db.prepare(
     "INSERT INTO action_log (room_code, request_id, player_id, type, payload_json, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
   ).run(room.code, "admin-" + genKey(6), player.id, type, JSON.stringify(payload || {}), JSON.stringify(result), now());
@@ -333,7 +448,7 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, part: 1, name: "팔도마블", ts: Date.now() });
 });
 app.get("/api/status", (req, res) => {
-  res.json({ status: "공통 엔진(방/폴링/액션/관리자) 구현 완료, 팔도마블 게임 로직 구현 중", updated: "2026-09-08" });
+  res.json({ status: "공통 엔진 + 팔도마블 게임 로직 구현 완료 (테스트 중)", updated: "2026-09-08" });
 });
 
 const PORT = process.env.PORT || 3000;
