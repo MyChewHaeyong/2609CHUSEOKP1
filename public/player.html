@@ -53,6 +53,7 @@
     <div id="playerList" style="margin-top:14px"></div>
     <button id="pingBtn" class="secondary" style="margin-top:14px">동기화 테스트 (핑 보내기)</button>
     <div class="status-line" id="pollLine"></div>
+    <button id="leaveBtn" class="secondary" style="margin-top:18px; border-color:var(--red); color:#ff9a8c">이 방 나가기 / 다른 방 만들기</button>
   </div>
 </div>
 
@@ -156,6 +157,16 @@
 
   $("createBtn").addEventListener("click", () => createRoom().catch((e) => showErr(e.message)));
   $("joinBtn").addEventListener("click", () => doJoin());
+  $("leaveBtn").addEventListener("click", () => {
+    clearInterval(pollTimer);
+    localStorage.removeItem("paldomarble_session");
+    session = null;
+    $("adminKeyBox").classList.add("hidden");
+    $("nameInput").value = "";
+    $("codeInput").value = "";
+    $("gamePanel").classList.add("hidden");
+    $("joinPanel").classList.remove("hidden");
+  });
   $("pingBtn").addEventListener("click", async () => {
     try {
       await api("/api/rooms/" + session.roomCode + "/action", {
