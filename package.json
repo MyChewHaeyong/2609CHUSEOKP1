@@ -1,8 +1,8 @@
 {
-  "name": "chuseok-part1-auction",
+  "name": "chuseok-part1-paldomarble",
   "version": "0.1.0",
   "private": true,
-  "description": "한가위 만찬 경매전 - 1부 게임 서버",
+  "description": "팔도마블 - 1부 게임 서버",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
