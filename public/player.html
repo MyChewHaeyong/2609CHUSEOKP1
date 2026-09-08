@@ -45,6 +45,10 @@
 
   <div id="gamePanel" class="panel hidden">
     <div class="room-code" id="roomCodeDisplay">----</div>
+    <div id="adminKeyBox" class="hidden" style="background:#1a1733; border:1px solid var(--gold); border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:12.5px; color:#cfcbea">
+      이 방을 만드신 분만 보면 됩니다 — 관리자 화면(admin.html)에 입력할 관리자 키입니다.<br/>
+      <span id="adminKeyText" style="color:var(--gold); font-weight:700; letter-spacing:.03em; word-break:break-all"></span>
+    </div>
     <div class="status-line" id="phaseLine">대기 중</div>
     <div id="playerList" style="margin-top:14px"></div>
     <button id="pingBtn" class="secondary" style="margin-top:14px">동기화 테스트 (핑 보내기)</button>
@@ -82,6 +86,7 @@
       body: JSON.stringify({ gameMode: "paldomarble" }),
     });
     $("codeInput").value = data.roomCode;
+    localStorage.setItem("paldomarble_adminkey_" + data.roomCode, data.adminKey);
     await doJoin(data.roomCode);
   }
 
@@ -112,6 +117,11 @@
     $("joinPanel").classList.add("hidden");
     $("gamePanel").classList.remove("hidden");
     $("roomCodeDisplay").textContent = session.roomCode;
+    const adminKey = localStorage.getItem("paldomarble_adminkey_" + session.roomCode);
+    if (adminKey) {
+      $("adminKeyText").textContent = adminKey;
+      $("adminKeyBox").classList.remove("hidden");
+    }
     poll();
     pollTimer = setInterval(poll, 1000);
   }
