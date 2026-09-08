@@ -1,0 +1,17 @@
+{
+  "name": "chuseok-part1-auction",
+  "version": "0.1.0",
+  "private": true,
+  "description": "한가위 만찬 경매전 - 1부 게임 서버",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "better-sqlite3": "^11.3.0"
+  }
+}
