@@ -1,22 +1,342 @@
 // 팔도마블 - 1부 게임 서버
-// 공통 엔진 초기 스캐폴딩: 정적 파일 서빙 + 헬스체크 + 상태 API 기본틀
+// 공통 엔진: 방 생성/입장, 상태 폴링, 행동(액션) 처리, 관리자 복구 도구
+// 실시간성보다 안정성 우선: WebSocket 대신 클라이언트가 1초 간격으로 상태를 다시 불러오는 폴링 방식을 씁니다.
 const path = require("path");
+const crypto = require("crypto");
 const express = require("express");
+const Database = require("better-sqlite3");
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
+// ---------------------------------------------------------------------------
+// DB 준비
+// Railway에서는 코드가 재배포될 때 컨테이너 파일시스템이 초기화될 수 있어서,
+// DB_PATH 환경변수(영구 저장공간에 마운트된 경로)가 있으면 그걸 쓰고, 없으면
+// 로컬 개발용으로 프로젝트 폴더 안의 data.sqlite를 씁니다.
+const dbPath = process.env.DB_PATH || path.join(__dirname, "data.sqlite");
+const db = new Database(dbPath);
+db.pragma("journal_mode = WAL");
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS rooms (
+  code TEXT PRIMARY KEY,
+  game_mode TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'waiting',
+  admin_key TEXT NOT NULL,
+  state_version INTEGER NOT NULL DEFAULT 0,
+  state_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS players (
+  id TEXT PRIMARY KEY,
+  room_code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  seat INTEGER NOT NULL,
+  is_bot INTEGER NOT NULL DEFAULT 0,
+  token TEXT NOT NULL,
+  last_seen INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS action_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_code TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  player_id TEXT,
+  type TEXT NOT NULL,
+  payload_json TEXT,
+  result_json TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE(room_code, request_id)
+);
+CREATE TABLE IF NOT EXISTS snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_code TEXT NOT NULL,
+  state_version INTEGER NOT NULL,
+  state_json TEXT NOT NULL,
+  label TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_players_room ON players(room_code);
+CREATE INDEX IF NOT EXISTS idx_snapshots_room ON snapshots(room_code, id);
+`);
+
+// ---------------------------------------------------------------------------
+// 유틸리티
+const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 헷갈리는 0/O, 1/I 제외
+function genRoomCode() {
+  let code;
+  const exists = db.prepare("SELECT 1 FROM rooms WHERE code = ?");
+  do {
+    code = Array.from({ length: 4 }, () => ROOM_CODE_CHARS[crypto.randomInt(ROOM_CODE_CHARS.length)]).join("");
+  } while (exists.get(code));
+  return code;
+}
+function genKey(bytes = 12) {
+  return crypto.randomBytes(bytes).toString("hex");
+}
+function now() {
+  return Date.now();
+}
+
+function getRoom(code) {
+  return db.prepare("SELECT * FROM rooms WHERE code = ?").get(code);
+}
+function getPlayers(code) {
+  return db.prepare("SELECT id, name, seat, is_bot, last_seen FROM players WHERE room_code = ? ORDER BY seat ASC").all(code);
+}
+function touchPlayer(playerId) {
+  db.prepare("UPDATE players SET last_seen = ? WHERE id = ?").run(now(), playerId);
+}
+function saveSnapshot(roomCode, stateVersion, stateJson, label) {
+  db.prepare(
+    "INSERT INTO snapshots (room_code, state_version, state_json, label, created_at) VALUES (?, ?, ?, ?, ?)"
+  ).run(roomCode, stateVersion, stateJson, label || null, now());
+  // 최근 30개만 보관 (그 이전 것은 정리)
+  const rows = db.prepare("SELECT id FROM snapshots WHERE room_code = ? ORDER BY id DESC").all(roomCode);
+  if (rows.length > 30) {
+    const toDelete = rows.slice(30).map((r) => r.id);
+    const del = db.prepare("DELETE FROM snapshots WHERE id = ?");
+    const tx = db.transaction((ids) => ids.forEach((id) => del.run(id)));
+    tx(toDelete);
+  }
+}
+function publicPlayer(p) {
+  return { id: p.id, name: p.name, seat: p.seat, isBot: !!p.is_bot, connected: now() - p.last_seen < 15000 };
+}
+function requireAdmin(req, res, room) {
+  const key = req.body?.adminKey || req.query.adminKey;
+  if (!key || key !== room.admin_key) {
+    res.status(403).json({ ok: false, error: "관리자 키가 올바르지 않습니다." });
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// 방 생성 / 입장
+app.post("/api/rooms", (req, res) => {
+  const gameMode = req.body?.gameMode === "auction" ? "auction" : "paldomarble";
+  const code = genRoomCode();
+  const adminKey = genKey();
+  const ts = now();
+  const state = { phase: "waiting" };
+  db.prepare(
+    "INSERT INTO rooms (code, game_mode, status, admin_key, state_version, state_json, created_at, updated_at) VALUES (?, ?, 'waiting', ?, 0, ?, ?, ?)"
+  ).run(code, gameMode, adminKey, JSON.stringify(state), ts, ts);
+  saveSnapshot(code, 0, JSON.stringify(state), "방 생성");
+  res.json({ ok: true, roomCode: code, adminKey, gameMode });
+});
+
+app.post("/api/rooms/:code/join", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  const name = (req.body?.name || "").trim().slice(0, 20);
+  if (!name) return res.status(400).json({ ok: false, error: "이름을 입력해주세요." });
+
+  const seatRow = db.prepare("SELECT COALESCE(MAX(seat), -1) AS m FROM players WHERE room_code = ?").get(room.code);
+  const seat = seatRow.m + 1;
+  const playerId = crypto.randomUUID();
+  const token = genKey();
+  db.prepare(
+    "INSERT INTO players (id, room_code, name, seat, is_bot, token, last_seen) VALUES (?, ?, ?, ?, 0, ?, ?)"
+  ).run(playerId, room.code, name, seat, token, now());
+
+  res.json({ ok: true, playerId, token, seat, roomCode: room.code, gameMode: room.game_mode });
+});
+
+// ---------------------------------------------------------------------------
+// 상태 폴링 (Player / Broadcast 공용, 1초 간격 호출을 전제로 함)
+app.get("/api/rooms/:code/state", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+
+  const { playerId, token } = req.query;
+  if (playerId && token) {
+    const p = db.prepare("SELECT * FROM players WHERE id = ? AND room_code = ?").get(playerId, room.code);
+    if (p && p.token === token) touchPlayer(playerId);
+  }
+
+  res.json({
+    ok: true,
+    roomCode: room.code,
+    gameMode: room.game_mode,
+    status: room.status,
+    stateVersion: room.state_version,
+    state: JSON.parse(room.state_json),
+    players: getPlayers(room.code).map(publicPlayer),
+    serverTime: now(),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 행동(액션) 처리 — 요청 ID 기반 중복 방지. 실제 게임 로직(주사위/구매 등)은
+// 다음 단계에서 이 안의 switch(type)에 채워 넣습니다.
+app.post("/api/rooms/:code/action", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+
+  const { requestId, playerId, token, type, payload } = req.body || {};
+  if (!requestId || !playerId || !token || !type) {
+    return res.status(400).json({ ok: false, error: "요청에 필요한 값이 빠졌습니다." });
+  }
+  const player = db.prepare("SELECT * FROM players WHERE id = ? AND room_code = ?").get(playerId, room.code);
+  if (!player || player.token !== token) {
+    return res.status(403).json({ ok: false, error: "플레이어 인증에 실패했습니다." });
+  }
+
+  // 이미 처리된 요청이면 그때 결과를 그대로 다시 돌려줌 (더블클릭/재전송 방지)
+  const prior = db.prepare("SELECT * FROM action_log WHERE room_code = ? AND request_id = ?").get(room.code, requestId);
+  if (prior) {
+    return res.json({ ok: true, deduped: true, ...JSON.parse(prior.result_json) });
+  }
+
+  touchPlayer(playerId);
+  const result = applyAction(room, player, type, payload || {});
+
+  db.prepare(
+    "INSERT INTO action_log (room_code, request_id, player_id, type, payload_json, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).run(room.code, requestId, playerId, type, JSON.stringify(payload || {}), JSON.stringify(result), now());
+
+  res.json({ ok: true, deduped: false, ...result });
+});
+
+// 공통 엔진 단계의 임시 액션 처리기. 지금은 "ping"만 실제로 있고,
+// 그 외 타입은 상태에 손대지 않고 정상 응답만 돌려줍니다(다음 단계에서 팔도마블 로직으로 대체).
+function applyAction(room, player, type, payload) {
+  const state = JSON.parse(room.state_json);
+  let stateChanged = false;
+
+  if (type === "ping") {
+    state.lastPing = { by: player.name, at: now() };
+    stateChanged = true;
+  }
+  // TODO(2단계): 'roll-dice' | 'buy-city' | 'build' | 'sell' | 'event-choice' | 'end-turn' 등을 여기에 구현
+
+  if (stateChanged) {
+    const newVersion = room.state_version + 1;
+    const stateJson = JSON.stringify(state);
+    db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, updated_at = ? WHERE code = ?").run(
+      stateJson,
+      newVersion,
+      now(),
+      room.code
+    );
+    saveSnapshot(room.code, newVersion, stateJson, `action:${type}`);
+    return { stateVersion: newVersion, state };
+  }
+  return { stateVersion: room.state_version, state };
+}
+
+// ---------------------------------------------------------------------------
+// 관리자 도구: 상태 확인, 스냅샷/되돌리기, 비상 대리 입력, JSON 백업/복원
+app.get("/api/rooms/:code/admin", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+
+  const recentActions = db
+    .prepare("SELECT type, player_id, created_at FROM action_log WHERE room_code = ? ORDER BY id DESC LIMIT 20")
+    .all(room.code);
+  res.json({
+    ok: true,
+    room: {
+      code: room.code,
+      gameMode: room.game_mode,
+      status: room.status,
+      stateVersion: room.state_version,
+      state: JSON.parse(room.state_json),
+    },
+    players: getPlayers(room.code).map(publicPlayer),
+    recentActions,
+  });
+});
+
+app.post("/api/rooms/:code/admin/undo", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+
+  // 가장 최근 스냅샷(현재 상태와 같을 수 있음)은 건너뛰고, 그 이전 스냅샷으로 되돌림
+  const rows = db.prepare("SELECT * FROM snapshots WHERE room_code = ? ORDER BY id DESC LIMIT 2").all(room.code);
+  const target = rows[1] || rows[0];
+  if (!target) return res.status(400).json({ ok: false, error: "되돌릴 이전 상태가 없습니다." });
+
+  db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, updated_at = ? WHERE code = ?").run(
+    target.state_json,
+    target.state_version,
+    now(),
+    room.code
+  );
+  if (rows[0]) db.prepare("DELETE FROM snapshots WHERE id = ?").run(rows[0].id);
+
+  res.json({ ok: true, stateVersion: target.state_version, state: JSON.parse(target.state_json) });
+});
+
+app.post("/api/rooms/:code/admin/emergency-action", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+
+  const { asPlayerId, type, payload } = req.body || {};
+  const player = db.prepare("SELECT * FROM players WHERE id = ? AND room_code = ?").get(asPlayerId, room.code);
+  if (!player) return res.status(404).json({ ok: false, error: "대상 플레이어를 찾을 수 없습니다." });
+
+  const result = applyAction(room, player, type, payload || {});
+  db.prepare(
+    "INSERT INTO action_log (room_code, request_id, player_id, type, payload_json, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).run(room.code, "admin-" + genKey(6), player.id, type, JSON.stringify(payload || {}), JSON.stringify(result), now());
+
+  res.json({ ok: true, ...result });
+});
+
+app.get("/api/rooms/:code/admin/export", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+
+  res.json({
+    ok: true,
+    exportedAt: now(),
+    room,
+    players: db.prepare("SELECT * FROM players WHERE room_code = ?").all(room.code),
+  });
+});
+
+app.post("/api/rooms/:code/admin/import", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+
+  const data = req.body?.data;
+  if (!data?.room) return res.status(400).json({ ok: false, error: "가져올 데이터 형식이 올바르지 않습니다." });
+
+  const tx = db.transaction(() => {
+    db.prepare(
+      "UPDATE rooms SET game_mode=?, status=?, state_version=?, state_json=?, updated_at=? WHERE code=?"
+    ).run(data.room.game_mode, data.room.status, data.room.state_version, data.room.state_json, now(), room.code);
+    db.prepare("DELETE FROM players WHERE room_code = ?").run(room.code);
+    const ins = db.prepare(
+      "INSERT INTO players (id, room_code, name, seat, is_bot, token, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    );
+    (data.players || []).forEach((p) => ins.run(p.id, room.code, p.name, p.seat, p.is_bot, p.token, p.last_seen));
+  });
+  tx();
+  saveSnapshot(room.code, data.room.state_version, data.room.state_json, "관리자 복원");
+
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
 app.get("/health", (req, res) => {
   res.json({ ok: true, part: 1, name: "팔도마블", ts: Date.now() });
 });
-
-// TODO: /api/room, /api/state, /api/action, 결산 코드 발급 API 등은 다음 커밋에서 구현
 app.get("/api/status", (req, res) => {
-  res.json({ status: "설계 완료, 게임 로직 구현 중", updated: "2026-09-07" });
+  res.json({ status: "공통 엔진(방/폴링/액션/관리자) 구현 완료, 팔도마블 게임 로직 구현 중", updated: "2026-09-08" });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`[part1] listening on ${PORT}`);
+  console.log(`[part1] listening on ${PORT} (db: ${dbPath})`);
 });
