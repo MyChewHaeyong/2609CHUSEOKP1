@@ -5,28 +5,58 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>팔도마블 - 중계 화면</title>
 <style>
-  :root{ --bg:#1E1B3A; --panel:#262048cc; --gold:#D9A441; --cream:#F4E9D8; --line:#3A3466; --ok:#4E9F63; }
+  :root{ --bg:#1E1B3A; --panel:#262048cc; --gold:#D9A441; --cream:#F4E9D8; --line:#3A3466; --ok:#4E9F63; --red:#E5867A; }
   *{box-sizing:border-box}
   html,body{margin:0; width:100%; height:100%}
-  body{background:var(--bg); color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif; display:flex; align-items:center; justify-content:center;}
+  body{background:var(--bg); color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif;}
   body.transparent{background:transparent}
-  .board{width:min(90vw,900px)}
-  h1{color:var(--gold); font-size:32px; margin:0 0 4px; text-align:center}
-  .code{text-align:center; font-size:15px; color:#cfcbea; margin-bottom:22px; letter-spacing:.05em}
-  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px}
-  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; backdrop-filter:blur(2px)}
-  .card .name{font-size:19px; font-weight:700}
-  .card .seat{font-size:12.5px; color:#9d97c2; margin-top:2px}
-  .dot{width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:8px; background:#666}
+  .wrap{max-width:1400px; margin:0 auto; padding:22px}
+  h1{color:var(--gold); font-size:28px; margin:0 0 2px; text-align:center}
+  .code{text-align:center; font-size:14px; color:#cfcbea; margin-bottom:16px; letter-spacing:.05em}
+  .timerline{display:flex; justify-content:center; gap:16px; align-items:center; margin-bottom:16px}
+  .timerbadge{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 16px; font-size:15px; backdrop-filter:blur(2px)}
+  .timerbadge.hot{border-color:var(--red); color:var(--red); font-weight:700}
+  .turnbanner{text-align:center; margin-bottom:18px; font-size:18px}
+  .turnbanner .who{color:var(--gold); font-weight:700}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:20px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; backdrop-filter:blur(2px)}
+  .card .name{font-size:16px; font-weight:700}
+  .card .seat{font-size:11.5px; color:#9d97c2; margin-top:2px}
+  .card .cash{font-size:13.5px; color:var(--gold); margin-top:6px; font-weight:600}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:7px; background:#666}
   .dot.on{background:var(--ok)}
-  .phase{text-align:center; margin-top:22px; font-size:14px; color:#cfcbea}
+
+  .board{display:flex; flex-wrap:wrap; gap:6px}
+  .tile{flex:1 1 90px; min-width:78px; max-width:120px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:7px 8px; font-size:11px; backdrop-filter:blur(2px)}
+  .tile.here{border-color:var(--gold)}
+  .tile .tn{font-weight:700; font-size:11.5px}
+  .tile .to{color:#9d97c2; margin-top:2px}
+  .tile .to.mine{color:var(--gold)}
+
+  .rankwrap{max-width:520px; margin:0 auto}
+  table{width:100%; border-collapse:collapse; font-size:15px}
+  th,td{padding:8px 10px; text-align:left; border-bottom:1px solid var(--line)}
+  td.num{text-align:right}
+
+  .phase{text-align:center; margin-top:16px; font-size:13px; color:#cfcbea}
 </style>
 </head>
 <body>
-  <div class="board">
+  <div class="wrap">
     <h1>팔도마블</h1>
     <div class="code" id="codeLine">방 코드 -</div>
+    <div class="timerline" id="timerLine"></div>
+    <div class="turnbanner" id="turnBanner"></div>
+
     <div class="grid" id="grid"></div>
+    <div id="boardWrap" class="board" id="board"></div>
+    <div id="rankWrap" class="rankwrap" style="display:none">
+      <table>
+        <thead><tr><th>순위</th><th>이름</th><th class="num">순자산</th></tr></thead>
+        <tbody id="rankBody"></tbody>
+      </table>
+    </div>
     <div class="phase" id="phaseLine"></div>
   </div>
 
@@ -36,24 +66,121 @@
   if (params.get("transparent") === "1") document.body.classList.add("transparent");
   document.getElementById("codeLine").textContent = roomCode ? "방 코드 " + roomCode : "URL에 ?room=방코드 를 붙여주세요";
 
+  const REGION_COLOR = { cc:"#4E7D57", jl:"#B0602F", gs:"#385E92", sd:"#95315A", jj:"#1E7C70" };
+  const TILES = [
+    { pos:0, name:"귀성길 출발", type:"start" },
+    { pos:1, name:"대전", type:"city", region:"cc" },
+    { pos:2, name:"세종", type:"city", region:"cc" },
+    { pos:3, name:"전통시장", type:"event" },
+    { pos:4, name:"청주", type:"city", region:"cc" },
+    { pos:5, name:"친척집", type:"event" },
+    { pos:6, name:"광주", type:"city", region:"jl" },
+    { pos:7, name:"전주", type:"city", region:"jl" },
+    { pos:8, name:"고속도로 정체", type:"event" },
+    { pos:9, name:"목포", type:"city", region:"jl" },
+    { pos:10, name:"송편가게", type:"event" },
+    { pos:11, name:"부산", type:"city", region:"gs" },
+    { pos:12, name:"대구", type:"city", region:"gs" },
+    { pos:13, name:"달토끼 상점", type:"event" },
+    { pos:14, name:"울산", type:"city", region:"gs" },
+    { pos:15, name:"복불복 윷판", type:"event" },
+    { pos:16, name:"제주", type:"city", region:"jj" },
+    { pos:17, name:"인천", type:"city", region:"sd" },
+    { pos:18, name:"친척집", type:"event" },
+    { pos:19, name:"수원", type:"city", region:"sd" },
+    { pos:20, name:"서울", type:"city", region:"sd" },
+  ];
+  const fmt = (n) => (n || 0).toLocaleString("ko-KR");
+
   async function poll() {
     if (!roomCode) return;
     try {
       const res = await fetch("/api/rooms/" + roomCode + "/state");
       const data = await res.json();
       if (!data.ok) return;
+
       const grid = document.getElementById("grid");
       grid.innerHTML = "";
       data.players.forEach((p) => {
         const card = document.createElement("div");
         card.className = "card";
+        const stateP = data.state && data.state.players ? data.state.players[p.id] : null;
         card.innerHTML =
-          '<div class="name"><span class="dot ' + (p.connected ? "on" : "") + '"></span>' + p.name + "</div>" +
-          '<div class="seat">' + (p.isBot ? "BOT · " : "") + "#" + (p.seat + 1) + "번</div>";
+          '<div class="name"><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' + p.name + "</div>" +
+          '<div class="seat">' + (p.isBot ? "BOT · " : "") + "#" + (p.seat + 1) + "번" + (stateP && stateP.bankrupt ? " · 파산" : "") + "</div>" +
+          (stateP ? '<div class="cash">' + fmt(stateP.cash) + " 엽전</div>" : "");
         grid.appendChild(card);
       });
+
       document.getElementById("phaseLine").textContent =
-        data.status === "waiting" ? "참가자를 기다리는 중" : data.status;
+        data.status === "waiting" ? "참가자를 기다리는 중" : data.status === "ended" ? "게임 종료" : "게임 진행 중";
+
+      const state = data.state;
+      const timerLine = document.getElementById("timerLine");
+      const turnBanner = document.getElementById("turnBanner");
+      const boardWrap = document.getElementById("board");
+      const rankWrap = document.getElementById("rankWrap");
+
+      if (!state || !state.players) {
+        timerLine.innerHTML = "";
+        turnBanner.innerHTML = "";
+        boardWrap.innerHTML = "";
+        rankWrap.style.display = "none";
+        return;
+      }
+
+      if (state.gameStartedAt) {
+        const elapsed = data.serverTime - state.gameStartedAt;
+        const mins = Math.floor(elapsed / 60000);
+        const secs = Math.floor((elapsed % 60000) / 1000);
+        const hot = elapsed > 90 * 60 * 1000;
+        timerLine.innerHTML = '<div class="timerbadge' + (hot ? " hot" : "") + '">경과 ' +
+          String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0") +
+          (hot ? " · 통행료 2배" : "") + "</div>";
+      } else {
+        timerLine.innerHTML = "";
+      }
+
+      if (state.phase === "ended") {
+        turnBanner.innerHTML = "";
+        boardWrap.style.display = "none";
+        rankWrap.style.display = "block";
+        const body = document.getElementById("rankBody");
+        body.innerHTML = "";
+        (state.finalRanking || []).forEach((r) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = "<td>" + r.rank + "위</td><td>" + r.name + "</td><td class='num'>" + fmt(r.netWorth) + "</td>";
+          body.appendChild(tr);
+        });
+      } else {
+        boardWrap.style.display = "flex";
+        rankWrap.style.display = "none";
+        const cur = state.players[state.currentPlayerId];
+        turnBanner.innerHTML = cur ? '<span class="who">' + cur.name + "</span>의 차례" : "";
+
+        const posToPlayers = {};
+        Object.values(state.players).forEach((p) => {
+          if (p.bankrupt) return;
+          (posToPlayers[p.position] = posToPlayers[p.position] || []).push(p.name);
+        });
+        boardWrap.innerHTML = "";
+        TILES.forEach((tile) => {
+          const here = (posToPlayers[tile.pos] || []).length > 0;
+          const div = document.createElement("div");
+          div.className = "tile" + (here ? " here" : "");
+          let ownerLine = "";
+          if (tile.type === "city") {
+            const prop = state.properties[tile.pos];
+            ownerLine = prop ? (state.players[prop.ownerId] ? state.players[prop.ownerId].name : "") +
+              (prop.building === "hotel" ? " 호텔" : prop.building === "villa" ? " 별장" : "") : "";
+          }
+          div.innerHTML =
+            '<div class="tn">' + tile.name + "</div>" +
+            (here ? '<div class="to mine">' + posToPlayers[tile.pos].join(",") + "</div>" : "") +
+            (ownerLine ? '<div class="to">' + ownerLine + "</div>" : "");
+          boardWrap.appendChild(div);
+        });
+      }
     } catch (e) {
       /* 방송 화면은 조용히 재시도만 함 */
     }
