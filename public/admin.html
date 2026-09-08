@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>팔도마블 - 관리자</title>
+<style>
+  :root{ --bg:#14122a; --panel:#1e1a3c; --gold:#D9A441; --red:#C0392B; --cream:#F4E9D8; --line:#332e5c; --ok:#4E9F63; }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif;}
+  .wrap{max-width:720px; margin:0 auto; padding:26px 18px 60px}
+  h1{color:var(--gold); font-size:21px; margin:0 0 18px}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px}
+  .panel h2{font-size:14px; color:var(--gold); margin:0 0 12px; text-transform:uppercase; letter-spacing:.04em}
+  label{display:block; font-size:12.5px; color:#9d97c2; margin-bottom:5px}
+  input, textarea{width:100%; padding:9px 10px; border-radius:7px; border:1px solid var(--line); background:#100e24; color:var(--cream); font-size:14px; margin-bottom:10px; font-family:inherit}
+  textarea{min-height:70px; resize:vertical}
+  button{padding:9px 14px; border-radius:7px; border:none; background:var(--gold); color:#1E1B3A; font-weight:700; font-size:13.5px; cursor:pointer; margin-right:8px; margin-bottom:8px}
+  button.danger{background:var(--red); color:#fff}
+  button.secondary{background:transparent; border:1px solid var(--gold); color:var(--gold)}
+  .row{display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:13.5px}
+  .row:last-child{border-bottom:none}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:8px; background:#666}
+  .dot.on{background:var(--ok)}
+  .msg{font-size:12.5px; color:#9d97c2; margin-top:6px; white-space:pre-wrap}
+  .msg.err{color:#ff9a8c}
+  select{width:100%; padding:9px 10px; border-radius:7px; border:1px solid var(--line); background:#100e24; color:var(--cream); margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>팔도마블 · 관리자(백스테이지) 화면</h1>
+
+  <div class="panel">
+    <h2>접속</h2>
+    <label>방 코드</label>
+    <input id="roomCode" placeholder="예: A7K2" style="text-transform:uppercase" />
+    <label>관리자 키</label>
+    <input id="adminKey" placeholder="방 생성 시 발급된 관리자 키" />
+    <button id="loadBtn">불러오기</button>
+    <div id="loadMsg" class="msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>현재 상태</h2>
+    <div id="statusLine" class="msg"></div>
+    <div id="playerList" style="margin-top:8px"></div>
+    <button id="refreshBtn" class="secondary" style="margin-top:10px">지금 새로고침</button>
+  </div>
+
+  <div class="panel">
+    <h2>복구 도구</h2>
+    <button id="undoBtn" class="danger">한 단계 되돌리기</button>
+    <button id="exportBtn" class="secondary">JSON 백업 내려받기</button>
+    <label style="margin-top:10px">JSON 백업 파일로 복원</label>
+    <input id="importFile" type="file" accept="application/json" />
+    <button id="importBtn" class="danger">이 파일로 복원</button>
+    <div id="recoveryMsg" class="msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>비상 대리 입력 (Emergency Host Mode)</h2>
+    <p style="font-size:12.5px;color:#9d97c2;margin:0 0 10px">특정 참가자의 화면이 먹통이어도, 관리자가 그 사람 대신 행동을 입력해서 진행을 이어갈 수 있습니다.</p>
+    <label>대상 참가자</label>
+    <select id="asPlayer"></select>
+    <label>행동 타입 (예: ping)</label>
+    <input id="actType" placeholder="ping" />
+    <label>행동 데이터 (JSON, 비워두면 {})</label>
+    <textarea id="actPayload" placeholder="{}"></textarea>
+    <button id="emergencyBtn" class="danger">대신 실행</button>
+    <div id="emergencyMsg" class="msg"></div>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let pollTimer = null;
+  let lastPlayers = [];
+
+  function creds() {
+    return { code: $("roomCode").value.trim().toUpperCase(), key: $("adminKey").value.trim() };
+  }
+  function saveCreds() {
+    localStorage.setItem("paldomarble_admin", JSON.stringify(creds()));
+  }
+  function loadCreds() {
+    try {
+      const raw = localStorage.getItem("paldomarble_admin");
+      if (!raw) return;
+      const c = JSON.parse(raw);
+      $("roomCode").value = c.code || "";
+      $("adminKey").value = c.key || "";
+    } catch {}
+  }
+
+  async function api(path, opts) {
+    const res = await fetch(path, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) throw new Error(data.error || ("요청 실패 (" + res.status + ")"));
+    return data;
+  }
+
+  async function refresh() {
+    const { code, key } = creds();
+    if (!code || !key) return;
+    try {
+      const data = await api("/api/rooms/" + code + "/admin?adminKey=" + encodeURIComponent(key));
+      $("statusLine").textContent =
+        "상태: " + data.room.status + " · 상태버전 " + data.room.stateVersion + " · 게임모드 " + data.room.gameMode;
+      $("statusLine").classList.remove("err");
+      lastPlayers = data.players;
+      renderPlayers(data.players);
+      renderPlayerSelect(data.players);
+    } catch (e) {
+      $("statusLine").textContent = "불러오기 실패: " + e.message;
+      $("statusLine").classList.add("err");
+    }
+  }
+
+  function renderPlayers(players) {
+    const el = $("playerList");
+    el.innerHTML = "";
+    players.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML =
+        '<span><span class="dot ' + (p.connected ? "on" : "") + '"></span>' + p.name + " (#" + (p.seat + 1) + ")</span>" +
+        "<span>" + (p.connected ? "연결됨" : "연결 끊김") + "</span>";
+      el.appendChild(row);
+    });
+  }
+  function renderPlayerSelect(players) {
+    const sel = $("asPlayer");
+    const current = sel.value;
+    sel.innerHTML = "";
+    players.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name + " (#" + (p.seat + 1) + ")";
+      sel.appendChild(opt);
+    });
+    if (current) sel.value = current;
+  }
+
+  $("loadBtn").addEventListener("click", () => {
+    saveCreds();
+    clearInterval(pollTimer);
+    refresh();
+    pollTimer = setInterval(refresh, 2000);
+    $("loadMsg").textContent = "연결되었습니다. 2초마다 자동으로 새로고침합니다.";
+  });
+  $("refreshBtn").addEventListener("click", refresh);
+
+  $("undoBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    try {
+      await api("/api/rooms/" + code + "/admin/undo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key }),
+      });
+      $("recoveryMsg").textContent = "이전 상태로 되돌렸습니다.";
+      $("recoveryMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("recoveryMsg").textContent = "되돌리기 실패: " + e.message;
+      $("recoveryMsg").classList.add("err");
+    }
+  });
+
+  $("exportBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    try {
+      const data = await api("/api/rooms/" + code + "/admin/export?adminKey=" + encodeURIComponent(key));
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "paldomarble-backup-" + code + "-" + Date.now() + ".json";
+      a.click();
+      $("recoveryMsg").textContent = "백업 파일을 내려받았습니다.";
+      $("recoveryMsg").classList.remove("err");
+    } catch (e) {
+      $("recoveryMsg").textContent = "내보내기 실패: " + e.message;
+      $("recoveryMsg").classList.add("err");
+    }
+  });
+
+  $("importBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    const file = $("importFile").files[0];
+    if (!file) return ($("recoveryMsg").textContent = "복원할 JSON 파일을 먼저 선택해주세요.");
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      await api("/api/rooms/" + code + "/admin/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key, data }),
+      });
+      $("recoveryMsg").textContent = "백업 파일로 복원했습니다.";
+      $("recoveryMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("recoveryMsg").textContent = "복원 실패: " + e.message;
+      $("recoveryMsg").classList.add("err");
+    }
+  });
+
+  $("emergencyBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    let payload = {};
+    try {
+      payload = $("actPayload").value.trim() ? JSON.parse($("actPayload").value) : {};
+    } catch {
+      $("emergencyMsg").textContent = "행동 데이터가 올바른 JSON 형식이 아닙니다.";
+      $("emergencyMsg").classList.add("err");
+      return;
+    }
+    try {
+      await api("/api/rooms/" + code + "/admin/emergency-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key, asPlayerId: $("asPlayer").value, type: $("actType").value || "ping", payload }),
+      });
+      $("emergencyMsg").textContent = "대신 실행했습니다.";
+      $("emergencyMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("emergencyMsg").textContent = "실행 실패: " + e.message;
+      $("emergencyMsg").classList.add("err");
+    }
+  });
+
+  loadCreds();
+</script>
+</body>
+</html>

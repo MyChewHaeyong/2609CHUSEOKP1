@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>팔도마블 - 참가자</title>
+<style>
+  :root{ --bg:#1E1B3A; --panel:#262048; --gold:#D9A441; --red:#C0392B; --cream:#F4E9D8; --line:#3A3466; --ok:#4E9F63; }
+  *{box-sizing:border-box}
+  body{margin:0; min-height:100vh; background:var(--bg); color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif;}
+  .wrap{max-width:480px; margin:0 auto; padding:28px 18px 60px}
+  h1{color:var(--gold); font-size:22px; margin:0 0 4px}
+  p.sub{color:#cfcbea; font-size:13px; margin:0 0 22px}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:14px}
+  label{display:block; font-size:13px; color:#cfcbea; margin-bottom:6px}
+  input[type=text]{width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#1a1733; color:var(--cream); font-size:15px; margin-bottom:12px}
+  button{width:100%; padding:11px; border-radius:8px; border:none; background:var(--gold); color:#1E1B3A; font-weight:700; font-size:14.5px; cursor:pointer}
+  button.secondary{background:transparent; border:1px solid var(--gold); color:var(--gold)}
+  button:disabled{opacity:.5; cursor:default}
+  .room-code{font-size:28px; font-weight:700; letter-spacing:.08em; color:var(--gold); text-align:center; margin:6px 0 2px}
+  .row{display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px}
+  .row:last-child{border-bottom:none}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:8px; background:#666}
+  .dot.on{background:var(--ok)}
+  .me{color:var(--gold); font-weight:700}
+  .status-line{font-size:12.5px; color:#9d97c2; text-align:center; margin-top:10px}
+  .err{color:#ff9a8c; font-size:13px; margin-top:8px}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>팔도마블</h1>
+  <p class="sub">한가위 팔도 유람마블 · 참가자 화면</p>
+
+  <div id="joinPanel" class="panel">
+    <label for="nameInput">이름</label>
+    <input id="nameInput" type="text" maxlength="20" placeholder="예: 큰형님" />
+    <label for="codeInput">방 코드 (새로 만들 땐 비워두세요)</label>
+    <input id="codeInput" type="text" maxlength="6" placeholder="예: A7K2" style="text-transform:uppercase" />
+    <button id="joinBtn">입장하기</button>
+    <button id="createBtn" class="secondary" style="margin-top:8px">새 방 만들기</button>
+    <div id="joinErr" class="err hidden"></div>
+  </div>
+
+  <div id="gamePanel" class="panel hidden">
+    <div class="room-code" id="roomCodeDisplay">----</div>
+    <div class="status-line" id="phaseLine">대기 중</div>
+    <div id="playerList" style="margin-top:14px"></div>
+    <button id="pingBtn" class="secondary" style="margin-top:14px">동기화 테스트 (핑 보내기)</button>
+    <div class="status-line" id="pollLine"></div>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let session = null; // { roomCode, playerId, token }
+  let pollTimer = null;
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem("paldomarble_session");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+  function saveSession(s) {
+    session = s;
+    localStorage.setItem("paldomarble_session", JSON.stringify(s));
+  }
+
+  async function api(path, opts) {
+    const res = await fetch(path, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) throw new Error(data.error || ("요청 실패 (" + res.status + ")"));
+    return data;
+  }
+
+  async function createRoom() {
+    const data = await api("/api/rooms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameMode: "paldomarble" }),
+    });
+    $("codeInput").value = data.roomCode;
+    await doJoin(data.roomCode);
+  }
+
+  async function doJoin(codeOverride) {
+    const name = $("nameInput").value.trim();
+    const code = (codeOverride || $("codeInput").value.trim()).toUpperCase();
+    $("joinErr").classList.add("hidden");
+    if (!name) return showErr("이름을 입력해주세요.");
+    if (!code) return showErr("방 코드를 입력하거나 '새 방 만들기'를 눌러주세요.");
+    try {
+      const data = await api("/api/rooms/" + code + "/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      saveSession({ roomCode: data.roomCode, playerId: data.playerId, token: data.token });
+      enterGame();
+    } catch (e) {
+      showErr(e.message);
+    }
+  }
+  function showErr(msg) {
+    $("joinErr").textContent = msg;
+    $("joinErr").classList.remove("hidden");
+  }
+
+  function enterGame() {
+    $("joinPanel").classList.add("hidden");
+    $("gamePanel").classList.remove("hidden");
+    $("roomCodeDisplay").textContent = session.roomCode;
+    poll();
+    pollTimer = setInterval(poll, 1000);
+  }
+
+  async function poll() {
+    try {
+      const data = await api(
+        "/api/rooms/" + session.roomCode + "/state?playerId=" + session.playerId + "&token=" + session.token
+      );
+      $("phaseLine").textContent = data.status === "waiting" ? "대기 중 · 참가자를 기다리고 있어요" : data.status;
+      renderPlayers(data.players);
+      $("pollLine").textContent = "마지막 동기화: " + new Date(data.serverTime).toLocaleTimeString("ko-KR");
+    } catch (e) {
+      $("pollLine").textContent = "연결 확인 중... (" + e.message + ")";
+    }
+  }
+
+  function renderPlayers(players) {
+    const el = $("playerList");
+    el.innerHTML = "";
+    players.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      const isMe = p.id === session.playerId;
+      row.innerHTML =
+        '<span><span class="dot ' + (p.connected ? "on" : "") + '"></span>' +
+        '<span class="' + (isMe ? "me" : "") + '">' + p.name + (isMe ? " (나)" : "") + "</span></span>" +
+        "<span>#" + (p.seat + 1) + "</span>";
+      el.appendChild(row);
+    });
+  }
+
+  $("createBtn").addEventListener("click", () => createRoom().catch((e) => showErr(e.message)));
+  $("joinBtn").addEventListener("click", () => doJoin());
+  $("pingBtn").addEventListener("click", async () => {
+    try {
+      await api("/api/rooms/" + session.roomCode + "/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(),
+          playerId: session.playerId,
+          token: session.token,
+          type: "ping",
+          payload: {},
+        }),
+      });
+    } catch (e) {
+      showErr(e.message);
+    }
+  });
+
+  // 새로고침 시 자동 재접속
+  (function init() {
+    const s = loadSession();
+    const urlRoom = new URLSearchParams(location.search).get("room");
+    if (s && (!urlRoom || urlRoom.toUpperCase() === s.roomCode)) {
+      session = s;
+      enterGame();
+    } else if (urlRoom) {
+      $("codeInput").value = urlRoom.toUpperCase();
+    }
+  })();
+</script>
+</body>
+</html>
