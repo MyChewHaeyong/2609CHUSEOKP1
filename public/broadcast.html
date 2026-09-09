@@ -10,29 +10,38 @@
   html,body{margin:0; width:100%; height:100%}
   body{background:var(--bg); color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif;}
   body.transparent{background:transparent}
-  .wrap{max-width:1400px; margin:0 auto; padding:22px}
+  .wrap{max-width:1000px; margin:0 auto; padding:22px}
   h1{color:var(--gold); font-size:28px; margin:0 0 2px; text-align:center}
-  .code{text-align:center; font-size:14px; color:#cfcbea; margin-bottom:16px; letter-spacing:.05em}
-  .timerline{display:flex; justify-content:center; gap:16px; align-items:center; margin-bottom:16px}
-  .timerbadge{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 16px; font-size:15px; backdrop-filter:blur(2px)}
-  .timerbadge.hot{border-color:var(--red); color:var(--red); font-weight:700}
-  .turnbanner{text-align:center; margin-bottom:18px; font-size:18px}
-  .turnbanner .who{color:var(--gold); font-weight:700}
+  .code{text-align:center; font-size:14px; color:#cfcbea; margin-bottom:18px; letter-spacing:.05em}
 
   .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:20px}
-  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; backdrop-filter:blur(2px)}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; backdrop-filter:blur(2px); border-top:3px solid transparent}
   .card .name{font-size:16px; font-weight:700}
   .card .seat{font-size:11.5px; color:#9d97c2; margin-top:2px}
   .card .cash{font-size:13.5px; color:var(--gold); margin-top:6px; font-weight:600}
   .dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:7px; background:#666}
   .dot.on{background:var(--ok)}
 
-  .board{display:flex; flex-wrap:wrap; gap:6px}
-  .tile{flex:1 1 90px; min-width:78px; max-width:120px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:7px 8px; font-size:11px; backdrop-filter:blur(2px)}
-  .tile.here{border-color:var(--gold)}
-  .tile .tn{font-weight:700; font-size:11.5px}
-  .tile .to{color:#9d97c2; margin-top:2px}
-  .tile .to.mine{color:var(--gold)}
+  /* 사각형 보드판(부루마블 스타일): 21칸을 정사각형 둘레에 배치 */
+  .squareboard{position:relative; width:100%; max-width:640px; aspect-ratio:1/1; margin:0 auto; background:#160f2e; border:1px solid var(--line); border-radius:16px; overflow:hidden}
+  .sb-tile{position:absolute; width:13%; height:13%; transform:translate(-50%,-50%); border-radius:8px; border:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:3px; line-height:1.2; backdrop-filter:blur(2px)}
+  .sb-tile.start{background:color-mix(in srgb, var(--gold) 28%, var(--panel))}
+  .sb-tile.event{background:color-mix(in srgb, #6C5D8A 32%, var(--panel))}
+  .sb-tile.here{border-color:var(--gold); border-width:2px}
+  .sb-tile .sb-region{width:6px; height:6px; border-radius:50%; margin-bottom:2px}
+  .sb-tile .sb-name{font-weight:700; color:var(--cream); font-size:10.5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .sb-tile .sb-owner{font-size:9px; color:var(--gold); margin-top:1px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .sb-tokens{display:flex; gap:2px; margin-top:2px; flex-wrap:wrap; justify-content:center}
+  .sb-token{width:8px; height:8px; border-radius:50%; border:1px solid var(--panel)}
+  .sb-center{position:absolute; left:15%; top:15%; right:15%; bottom:15%; display:flex; align-items:center; justify-content:center; text-align:center; border:1px dashed var(--line); border-radius:14px}
+  .sb-center-inner .who{font-size:20px; font-weight:700; color:var(--gold)}
+  .sb-center-inner .what{font-size:13px; color:#cfcbea; margin-top:6px}
+  .sb-center-inner .timer{margin-top:14px; font-size:16px; font-family:monospace}
+  .sb-center-inner .timer.hot{color:var(--red); font-weight:700}
+
+  .legend{display:flex; flex-wrap:wrap; gap:12px; margin-top:14px; font-size:11.5px; color:#9d97c2; justify-content:center}
+  .legend span{display:inline-flex; align-items:center; gap:5px}
+  .legend i{width:9px; height:9px; border-radius:50%; display:inline-block}
 
   .rankwrap{max-width:520px; margin:0 auto}
   table{width:100%; border-collapse:collapse; font-size:15px}
@@ -46,11 +55,21 @@
   <div class="wrap">
     <h1>팔도마블</h1>
     <div class="code" id="codeLine">방 코드 -</div>
-    <div class="timerline" id="timerLine"></div>
-    <div class="turnbanner" id="turnBanner"></div>
 
     <div class="grid" id="grid"></div>
-    <div id="boardWrap" class="board" id="board"></div>
+
+    <div id="boardWrap" class="squareboard">
+      <div class="sb-center"><div class="sb-center-inner" id="sbCenterInner"></div></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:#4E7D57"></i>충청권</span>
+      <span><i style="background:#B0602F"></i>전라권</span>
+      <span><i style="background:#385E92"></i>경상권</span>
+      <span><i style="background:#95315A"></i>수도권</span>
+      <span><i style="background:#1E7C70"></i>제주</span>
+      <span><i style="background:#6C5D8A"></i>이벤트</span>
+    </div>
+
     <div id="rankWrap" class="rankwrap" style="display:none">
       <table>
         <thead><tr><th>순위</th><th>이름</th><th class="num">순자산</th></tr></thead>
@@ -67,6 +86,14 @@
   document.getElementById("codeLine").textContent = roomCode ? "방 코드 " + roomCode : "URL에 ?room=방코드 를 붙여주세요";
 
   const REGION_COLOR = { cc:"#4E7D57", jl:"#B0602F", gs:"#385E92", sd:"#95315A", jj:"#1E7C70" };
+  const TOKEN_COLORS = ["#D9A441", "#4E9F63", "#5B8DEF", "#C9598F"];
+  // 21칸을 정사각형 둘레에 배치한 좌표(%, 왼쪽 위 기준). 모서리는 pos 0/6/11/16. (player.html과 동일)
+  const TILE_COORDS = [
+    [0, 100], [16.67, 100], [33.33, 100], [50, 100], [66.67, 100], [83.33, 100], [100, 100],
+    [100, 80], [100, 60], [100, 40], [100, 20], [100, 0],
+    [80, 0], [60, 0], [40, 0], [20, 0], [0, 0],
+    [0, 20], [0, 40], [0, 60], [0, 80],
+  ];
   const TILES = [
     { pos:0, name:"귀성길 출발", type:"start" },
     { pos:1, name:"대전", type:"city", region:"cc" },
@@ -91,6 +118,26 @@
     { pos:20, name:"서울", type:"city", region:"sd" },
   ];
   const fmt = (n) => (n || 0).toLocaleString("ko-KR");
+  const tokenColor = (seat) => TOKEN_COLORS[seat % TOKEN_COLORS.length];
+  // 칸이 정사각형 테두리(0~100%)에 딱 붙으면 절반이 컨테이너 밖으로 잘리므로, 칸 크기(13%)의
+  // 절반만큼 안쪽으로 들여서 배치.
+  const SB_MARGIN = 7;
+  function insetPct(v) {
+    return SB_MARGIN + (v * (100 - 2 * SB_MARGIN)) / 100;
+  }
+
+  function ensureTiles(container) {
+    TILES.forEach((tile) => {
+      if (document.getElementById("sbTile" + tile.pos)) return;
+      const box = document.createElement("div");
+      box.id = "sbTile" + tile.pos;
+      box.className = "sb-tile";
+      const [x, y] = TILE_COORDS[tile.pos];
+      box.style.left = insetPct(x) + "%";
+      box.style.top = insetPct(y) + "%";
+      container.appendChild(box);
+    });
+  }
 
   async function poll() {
     if (!roomCode) return;
@@ -105,6 +152,7 @@
         const card = document.createElement("div");
         card.className = "card";
         const stateP = data.state && data.state.players ? data.state.players[p.id] : null;
+        card.style.borderTopColor = tokenColor(p.seat);
         card.innerHTML =
           '<div class="name"><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' + p.name + "</div>" +
           '<div class="seat">' + (p.isBot ? "BOT · " : "") + "#" + (p.seat + 1) + "번" + (stateP && stateP.bankrupt ? " · 파산" : "") + "</div>" +
@@ -116,34 +164,29 @@
         data.status === "waiting" ? "참가자를 기다리는 중" : data.status === "ended" ? "게임 종료" : "게임 진행 중";
 
       const state = data.state;
-      const timerLine = document.getElementById("timerLine");
-      const turnBanner = document.getElementById("turnBanner");
-      const boardWrap = document.getElementById("board");
+      const boardWrap = document.getElementById("boardWrap");
       const rankWrap = document.getElementById("rankWrap");
+      const centerInner = document.getElementById("sbCenterInner");
 
       if (!state || !state.players) {
-        timerLine.innerHTML = "";
-        turnBanner.innerHTML = "";
-        boardWrap.innerHTML = "";
-        rankWrap.style.display = "none";
+        centerInner.innerHTML = "";
         return;
       }
 
+      let timerHtml = "";
       if (state.gameStartedAt) {
         const elapsed = data.serverTime - state.gameStartedAt;
         const mins = Math.floor(elapsed / 60000);
         const secs = Math.floor((elapsed % 60000) / 1000);
         const hot = elapsed > 90 * 60 * 1000;
-        timerLine.innerHTML = '<div class="timerbadge' + (hot ? " hot" : "") + '">경과 ' +
+        timerHtml = '<div class="timer' + (hot ? " hot" : "") + '">경과 ' +
           String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0") +
           (hot ? " · 통행료 2배" : "") + "</div>";
-      } else {
-        timerLine.innerHTML = "";
       }
 
       if (state.phase === "ended") {
-        turnBanner.innerHTML = "";
-        boardWrap.style.display = "none";
+        centerInner.innerHTML = '<div class="who">게임 종료</div>';
+        boardWrap.style.opacity = "0.4";
         rankWrap.style.display = "block";
         const body = document.getElementById("rankBody");
         body.innerHTML = "";
@@ -153,38 +196,59 @@
           body.appendChild(tr);
         });
       } else {
-        boardWrap.style.display = "flex";
+        boardWrap.style.opacity = "1";
         rankWrap.style.display = "none";
         const cur = state.players[state.currentPlayerId];
-        turnBanner.innerHTML = cur ? '<span class="who">' + cur.name + "</span>의 차례" : "";
+        centerInner.innerHTML =
+          (cur ? '<div class="who">' + cur.name + "의 차례</div>" : "") +
+          '<div class="what">' + turnPhaseLabel(state.turnPhase) + "</div>" +
+          timerHtml;
 
+        ensureTiles(boardWrap);
         const posToPlayers = {};
         Object.values(state.players).forEach((p) => {
           if (p.bankrupt) return;
-          (posToPlayers[p.position] = posToPlayers[p.position] || []).push(p.name);
+          (posToPlayers[p.position] = posToPlayers[p.position] || []).push(p);
         });
-        boardWrap.innerHTML = "";
         TILES.forEach((tile) => {
-          const here = (posToPlayers[tile.pos] || []).length > 0;
-          const div = document.createElement("div");
-          div.className = "tile" + (here ? " here" : "");
-          let ownerLine = "";
+          const box = document.getElementById("sbTile" + tile.pos);
+          const here = !!posToPlayers[tile.pos];
+          box.className = "sb-tile" + (tile.type === "start" ? " start" : tile.type === "event" ? " event" : "") + (here ? " here" : "");
+          let ownerHtml = "";
           if (tile.type === "city") {
             const prop = state.properties[tile.pos];
-            ownerLine = prop ? (state.players[prop.ownerId] ? state.players[prop.ownerId].name : "") +
-              (prop.building === "hotel" ? " 호텔" : prop.building === "villa" ? " 별장" : "") : "";
+            if (prop) {
+              const ownerP = state.players[prop.ownerId];
+              const buildMark = prop.building === "hotel" ? "★" : prop.building === "villa" ? "▲" : "";
+              ownerHtml = '<div class="sb-owner">' + (ownerP ? ownerP.name.slice(0, 3) : "?") + buildMark + "</div>";
+            }
           }
-          div.innerHTML =
-            '<div class="tn">' + tile.name + "</div>" +
-            (here ? '<div class="to mine">' + posToPlayers[tile.pos].join(",") + "</div>" : "") +
-            (ownerLine ? '<div class="to">' + ownerLine + "</div>" : "");
-          boardWrap.appendChild(div);
+          const tokensHtml = here
+            ? '<div class="sb-tokens">' +
+              posToPlayers[tile.pos].map((p) => '<span class="sb-token" style="background:' + tokenColor(p.seat) + '"></span>').join("") +
+              "</div>"
+            : "";
+          const color = tile.type === "city" ? REGION_COLOR[tile.region] : null;
+          box.innerHTML =
+            (color ? '<span class="sb-region" style="background:' + color + '"></span>' : "") +
+            '<span class="sb-name">' + tile.name + "</span>" +
+            ownerHtml + tokensHtml;
         });
       }
     } catch (e) {
       /* 방송 화면은 조용히 재시도만 함 */
     }
   }
+
+  function turnPhaseLabel(tp) {
+    return {
+      "awaiting-roll": "주사위 굴리는 중",
+      "awaiting-buy": "도시 구매 결정 중",
+      "awaiting-event": "이벤트 처리 중",
+      "awaiting-endturn": "턴 마무리 중",
+    }[tp] || "";
+  }
+
   poll();
   setInterval(poll, 1000);
 </script>
