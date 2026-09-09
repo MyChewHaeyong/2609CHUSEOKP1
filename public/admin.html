@@ -57,6 +57,7 @@
       <option value="3">3명</option>
       <option value="4" selected>4명</option>
     </select>
+    <div id="botNamesArea"></div>
     <button id="startGameBtn">게임 시작</button>
     <div id="startMsg" class="msg"></div>
   </div>
@@ -131,9 +132,36 @@
       lastPlayers = data.players;
       renderPlayers(data.players);
       renderPlayerSelect(data.players);
+      if (data.room.status === "waiting") {
+        renderBotNameInputs(data.players.filter((p) => !p.isBot).length);
+      } else {
+        $("botNamesArea").innerHTML = "";
+      }
     } catch (e) {
       $("statusLine").textContent = "불러오기 실패: " + e.message;
       $("statusLine").classList.add("err");
+    }
+  }
+
+  // BOT 이름을 직접 정할 수 있게, 부족한 자리 수만큼 입력칸을 보여줌.
+  let botNameDrafts = [];
+  function renderBotNameInputs(humanCount) {
+    const total = Number($("totalPlayers").value);
+    const botsNeeded = Math.max(0, total - humanCount);
+    const area = $("botNamesArea");
+    area.innerHTML = "";
+    if (botsNeeded === 0) return;
+    const label = document.createElement("label");
+    label.textContent = "BOT 이름 (비워두면 기본 이름 사용)";
+    area.appendChild(label);
+    for (let i = 0; i < botsNeeded; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.maxLength = 20;
+      input.placeholder = "BOT " + (i + 1) + " 이름 (선택)";
+      input.value = botNameDrafts[i] || "";
+      input.addEventListener("input", () => { botNameDrafts[i] = input.value; });
+      area.appendChild(input);
     }
   }
 
@@ -171,13 +199,17 @@
   });
   $("refreshBtn").addEventListener("click", refresh);
 
+  $("totalPlayers").addEventListener("change", () => {
+    const humanCount = (lastPlayers || []).filter((p) => !p.isBot).length;
+    renderBotNameInputs(humanCount);
+  });
   $("startGameBtn").addEventListener("click", async () => {
     const { code, key } = creds();
     try {
       const data = await api("/api/rooms/" + code + "/admin/start-game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminKey: key, totalPlayers: Number($("totalPlayers").value) }),
+        body: JSON.stringify({ adminKey: key, totalPlayers: Number($("totalPlayers").value), botNames: botNameDrafts }),
       });
       $("startMsg").textContent = "게임을 시작했습니다. 참가자 " + data.players.length + "명 (부족한 자리는 BOT으로 채워짐).";
       $("startMsg").classList.remove("err");
