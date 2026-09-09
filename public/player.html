@@ -46,14 +46,24 @@
   .tilecard .tname{font-size:17px; font-weight:700; color:var(--cream)}
   .tilecard .tinfo{font-size:12.5px; color:#9d97c2; margin-top:4px; line-height:1.6}
 
-  .boardlist{max-height:260px; overflow-y:auto; border:1px solid var(--line); border-radius:8px}
-  .tilerow{display:flex; align-items:center; gap:8px; padding:7px 10px; border-bottom:1px solid var(--line); font-size:12.5px}
-  .tilerow:last-child{border-bottom:none}
-  .tilerow.here{background:color-mix(in srgb, var(--gold) 15%, transparent)}
-  .tilerow .swatch{width:8px; height:8px; border-radius:50%; flex:0 0 auto}
-  .tilerow .tn{flex:1; color:var(--cream)}
-  .tilerow .owner{color:#9d97c2; white-space:nowrap}
-  .tilerow .owner.mine{color:var(--gold)}
+  /* 사각형 보드판(부루마블 스타일): 21칸을 정사각형 둘레에 배치하고, 가운데는 선택한 칸 정보 표시 */
+  .squareboard{position:relative; width:100%; aspect-ratio:1/1; max-width:460px; margin:0 auto; background:#160f2e; border:1px solid var(--line); border-radius:14px; overflow:hidden}
+  .sb-tile{position:absolute; width:13.2%; height:13.2%; transform:translate(-50%,-50%); border-radius:6px; border:1px solid var(--line); background:#1a1733; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:2px; cursor:pointer; line-height:1.15; transition:background .15s}
+  .sb-tile.start{background:color-mix(in srgb, var(--gold) 28%, #1a1733)}
+  .sb-tile.event{background:color-mix(in srgb, #6C5D8A 30%, #1a1733)}
+  .sb-tile.here{box-shadow:0 0 0 2px var(--gold) inset}
+  .sb-tile.selected{border-color:var(--gold)}
+  .sb-tile .sb-region{width:5px; height:5px; border-radius:50%; margin-bottom:1px}
+  .sb-tile .sb-name{font-weight:700; color:var(--cream); font-size:8.5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .sb-tile .sb-owner{font-size:7.5px; color:var(--gold); margin-top:1px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .sb-tokens{display:flex; gap:2px; margin-top:1px; flex-wrap:wrap; justify-content:center}
+  .sb-token{width:6px; height:6px; border-radius:50%; border:1px solid #1a1733}
+  .sb-center{position:absolute; left:16%; top:16%; right:16%; bottom:16%; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; border:1px dashed var(--line); border-radius:10px}
+  .sb-center-inner .cn{font-size:13.5px; font-weight:700; color:var(--gold)}
+  .sb-center-inner .ci{font-size:11px; color:#cfcbea; margin-top:4px; line-height:1.5}
+  .legend{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; font-size:10.5px; color:#9d97c2; justify-content:center}
+  .legend span{display:inline-flex; align-items:center; gap:4px}
+  .legend i{width:8px; height:8px; border-radius:50%; display:inline-block}
 
   .proprow{display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px}
   .proprow:last-child{border-bottom:none}
@@ -103,6 +113,7 @@
         <option value="3">3명</option>
         <option value="4" selected>4명</option>
       </select>
+      <div id="botNamesArea"></div>
       <button id="startGameBtn">게임 시작</button>
       <div id="startMsg" class="err hidden"></div>
     </div>
@@ -141,8 +152,18 @@
       </div>
 
       <div class="panel">
-        <h2>보드 현황</h2>
-        <div class="boardlist" id="boardList"></div>
+        <h2>보드 현황 <span style="font-weight:400; color:#9d97c2; font-size:11px">(칸을 눌러보세요)</span></h2>
+        <div class="squareboard" id="squareBoard">
+          <div class="sb-center" id="sbCenter"><div class="sb-center-inner" id="sbCenterInner"></div></div>
+        </div>
+        <div class="legend">
+          <span><i style="background:#4E7D57"></i>충청권</span>
+          <span><i style="background:#B0602F"></i>전라권</span>
+          <span><i style="background:#385E92"></i>경상권</span>
+          <span><i style="background:#95315A"></i>수도권</span>
+          <span><i style="background:#1E7C70"></i>제주</span>
+          <span><i style="background:#6C5D8A"></i>이벤트</span>
+        </div>
       </div>
 
       <div class="panel">
@@ -162,8 +183,25 @@
   let pollTimer = null;
   let myAdminKey = null;
   let busy = false; // 액션 처리 중 중복 클릭 방지
+  let lastHumanCount = 1;
 
   const REGION_COLOR = { cc:"#4E7D57", jl:"#B0602F", gs:"#385E92", sd:"#95315A", jj:"#1E7C70" };
+  const TOKEN_COLORS = ["#D9A441", "#4E9F63", "#5B8DEF", "#C9598F"];
+  // 21칸을 정사각형 둘레에 배치한 좌표(%, 왼쪽 위 기준). 모서리는 pos 0/6/11/16.
+  const TILE_COORDS = [
+    [0, 100], [16.67, 100], [33.33, 100], [50, 100], [66.67, 100], [83.33, 100], [100, 100],
+    [100, 80], [100, 60], [100, 40], [100, 20], [100, 0],
+    [80, 0], [60, 0], [40, 0], [20, 0], [0, 0],
+    [0, 20], [0, 40], [0, 60], [0, 80],
+  ];
+  let selectedPos = null;
+  let lastBoardState = null;
+  // 칸이 정사각형 테두리(0~100%)에 딱 붙으면 칸의 절반이 컨테이너 밖으로 잘려서 안 보이므로,
+  // 칸 크기(13.2%)의 절반만큼 안쪽으로 들여서 배치.
+  const SB_MARGIN = 7;
+  function insetPct(v) {
+    return SB_MARGIN + (v * (100 - 2 * SB_MARGIN)) / 100;
+  }
   // game.js의 TILES와 동일한 보드 정보(표시용). 서버 상태(state.properties)와 합쳐서 렌더링합니다.
   const TILES = [
     { pos:0, name:"귀성길 출발", type:"start" },
@@ -280,6 +318,8 @@
 
     if (status === "waiting") {
       $("phaseLine").textContent = "대기 중 · 참가자를 기다리고 있어요 (" + data.players.length + "명 입장)";
+      lastHumanCount = data.players.length;
+      if (myAdminKey) renderBotNameInputs(lastHumanCount);
       return;
     }
     $("phaseLine").textContent = status === "ended" ? "게임 종료" : "게임 진행 중";
@@ -456,36 +496,84 @@
   }
 
   function renderBoard(state) {
-    const el = $("boardList");
-    el.innerHTML = "";
+    lastBoardState = state; // 칸을 다시 누르지 않아도 폴링 때마다 선택된 칸 정보가 최신으로 갱신되도록 보관
+    const el = $("squareBoard");
+    // 기존 타일 DOM은 재사용하고(매초 다시 만들지 않음) 내용만 갱신 — 깜빡임 방지
     const posToPlayers = {};
-    Object.entries(state.players).forEach(([pid, p]) => {
+    Object.values(state.players).forEach((p) => {
       if (p.bankrupt) return;
-      (posToPlayers[p.position] = posToPlayers[p.position] || []).push(p.name);
+      (posToPlayers[p.position] = posToPlayers[p.position] || []).push(p);
     });
+
     TILES.forEach((tile) => {
-      const row = document.createElement("div");
-      const here = (posToPlayers[tile.pos] || []).length > 0;
-      row.className = "tilerow" + (here ? " here" : "");
-      const color = tile.type === "city" ? REGION_COLOR[tile.region] : (tile.type === "start" ? "#D9A441" : "#6C5D8A");
-      let ownerLabel = "";
+      let box = document.getElementById("sbTile" + tile.pos);
+      if (!box) {
+        box = document.createElement("div");
+        box.id = "sbTile" + tile.pos;
+        box.className = "sb-tile";
+        const [x, y] = TILE_COORDS[tile.pos];
+        box.style.left = insetPct(x) + "%";
+        box.style.top = insetPct(y) + "%";
+        box.addEventListener("click", () => { selectedPos = tile.pos; renderCenterInfo(lastBoardState); });
+        el.appendChild(box);
+      }
+      const here = !!posToPlayers[tile.pos];
+      box.className = "sb-tile" + (tile.type === "start" ? " start" : tile.type === "event" ? " event" : "") +
+        (here ? " here" : "") + (selectedPos === tile.pos ? " selected" : "");
+
+      let ownerHtml = "";
       if (tile.type === "city") {
         const prop = state.properties[tile.pos];
         if (prop) {
-          const ownerName = state.players[prop.ownerId] ? state.players[prop.ownerId].name : "?";
-          const buildTag = prop.building === "hotel" ? " 호텔" : prop.building === "villa" ? " 별장" : "";
-          ownerLabel = ownerName + buildTag;
-        } else {
-          ownerLabel = fmt(tile.price);
+          const ownerP = state.players[prop.ownerId];
+          const initial = ownerP ? ownerP.name.slice(0, 2) : "?";
+          const buildMark = prop.building === "hotel" ? "★" : prop.building === "villa" ? "▲" : "";
+          ownerHtml = '<div class="sb-owner">' + initial + buildMark + "</div>";
         }
       }
-      const mine = tile.type === "city" && state.properties[tile.pos] && state.properties[tile.pos].ownerId === session.playerId;
-      row.innerHTML =
-        '<span class="swatch" style="background:' + color + '"></span>' +
-        '<span class="tn">' + tile.pos + ". " + tile.name + (here ? " · " + posToPlayers[tile.pos].join(",") : "") + "</span>" +
-        '<span class="owner' + (mine ? " mine" : "") + '">' + ownerLabel + "</span>";
-      el.appendChild(row);
+      const tokensHtml = here
+        ? '<div class="sb-tokens">' +
+          posToPlayers[tile.pos].map((p) => '<span class="sb-token" style="background:' + tokenColor(p.seat) + '"></span>').join("") +
+          "</div>"
+        : "";
+      const color = tile.type === "city" ? REGION_COLOR[tile.region] : null;
+      box.innerHTML =
+        (color ? '<span class="sb-region" style="background:' + color + '"></span>' : "") +
+        '<span class="sb-name">' + tile.name + "</span>" +
+        ownerHtml +
+        tokensHtml;
     });
+
+    renderCenterInfo(state);
+  }
+
+  function tokenColor(seat) {
+    return TOKEN_COLORS[seat % TOKEN_COLORS.length];
+  }
+
+  function renderCenterInfo(state) {
+    const inner = $("sbCenterInner");
+    const pos = selectedPos != null ? selectedPos : (state.players[state.currentPlayerId] ? state.players[state.currentPlayerId].position : 0);
+    const tile = TILES[pos];
+    let bodyHtml = "";
+    if (tile.type === "city") {
+      const prop = state.properties[pos];
+      const priceLine = "구매가 " + fmt(tile.price) + " 엽전";
+      if (prop) {
+        const ownerP = state.players[prop.ownerId];
+        const buildLabel = prop.building === "hotel" ? " · 호텔" : prop.building === "villa" ? " · 별장" : "";
+        bodyHtml = priceLine + "<br/>소유: " + (ownerP ? ownerP.name : "?") + buildLabel;
+      } else {
+        bodyHtml = priceLine + "<br/>주인 없음";
+      }
+    } else if (tile.type === "start") {
+      bodyHtml = "통과할 때마다 용돈 +" + fmt(30000);
+    } else {
+      bodyHtml = "이벤트 칸";
+    }
+    const here = Object.values(state.players).filter((p) => !p.bankrupt && p.position === pos).map((p) => p.name);
+    if (here.length) bodyHtml += "<br/>지금 여기: " + here.join(", ");
+    inner.innerHTML = '<div class="cn">' + tile.pos + ". " + tile.name + '</div><div class="ci">' + bodyHtml + "</div>";
   }
 
   function renderLog(state) {
@@ -527,6 +615,29 @@
     return b;
   }
 
+  // 대기 화면에서 BOT 이름을 직접 정할 수 있게, 부족한 자리 수만큼 입력칸을 보여줌.
+  // 입력값은 botNameDrafts에 보관해서 인원수를 바꾸거나 화면이 다시 그려져도 유지되게 함.
+  let botNameDrafts = [];
+  function renderBotNameInputs(humanCount) {
+    const total = Number($("totalPlayersSelect").value);
+    const botsNeeded = Math.max(0, total - humanCount);
+    const area = $("botNamesArea");
+    area.innerHTML = "";
+    if (botsNeeded === 0) return;
+    const label = document.createElement("label");
+    label.textContent = "BOT 이름 (비워두면 기본 이름 사용)";
+    area.appendChild(label);
+    for (let i = 0; i < botsNeeded; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.maxLength = 20;
+      input.placeholder = "BOT " + (i + 1) + " 이름 (선택)";
+      input.value = botNameDrafts[i] || "";
+      input.addEventListener("input", () => { botNameDrafts[i] = input.value; });
+      area.appendChild(input);
+    }
+  }
+
   async function sendAction(type, payload) {
     if (busy) return;
     busy = true;
@@ -558,13 +669,18 @@
     $("gamePanel").classList.add("hidden");
     $("joinPanel").classList.remove("hidden");
   });
+  $("totalPlayersSelect").addEventListener("change", () => renderBotNameInputs(lastHumanCount));
   $("startGameBtn").addEventListener("click", async () => {
     $("startMsg").classList.add("hidden");
     try {
       await api("/api/rooms/" + session.roomCode + "/admin/start-game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminKey: myAdminKey, totalPlayers: Number($("totalPlayersSelect").value) }),
+        body: JSON.stringify({
+          adminKey: myAdminKey,
+          totalPlayers: Number($("totalPlayersSelect").value),
+          botNames: botNameDrafts,
+        }),
       });
       poll();
     } catch (e) {
