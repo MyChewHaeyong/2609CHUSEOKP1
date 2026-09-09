@@ -66,6 +66,7 @@ function initState(players) {
       name: p.name,
       isBot: !!p.isBot,
       seat: p.seat,
+      characterId: p.characterId || null,
       cash: START_CASH,
       position: 0,
       bankrupt: false,
