@@ -617,10 +617,17 @@
 
   // 대기 화면에서 BOT 이름을 직접 정할 수 있게, 부족한 자리 수만큼 입력칸을 보여줌.
   // 입력값은 botNameDrafts에 보관해서 인원수를 바꾸거나 화면이 다시 그려져도 유지되게 함.
+  // 주의: poll()이 1초마다 이 함수를 다시 부르는데, 그때마다 입력칸 DOM을 새로 만들면
+  // 타이핑 중 포커스가 날아가버려서 한 글자 치면 칸 밖으로 튕겨나감(신고된 버그) →
+  // 필요한 칸 개수가 실제로 바뀔 때만 다시 그리고, 안 바뀌면 기존 입력칸을 그대로 둠.
   let botNameDrafts = [];
+  let renderedBotsNeeded = -1;
   function renderBotNameInputs(humanCount) {
     const total = Number($("totalPlayersSelect").value);
     const botsNeeded = Math.max(0, total - humanCount);
+    if (botsNeeded === renderedBotsNeeded) return; // 개수 그대로면 다시 그리지 않음(포커스 유지)
+    renderedBotsNeeded = botsNeeded;
+
     const area = $("botNamesArea");
     area.innerHTML = "";
     if (botsNeeded === 0) return;
