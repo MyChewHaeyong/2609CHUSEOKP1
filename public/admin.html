@@ -25,6 +25,11 @@
   .msg{font-size:12.5px; color:#9d97c2; margin-top:6px; white-space:pre-wrap}
   .msg.err{color:#ff9a8c}
   select{width:100%; padding:9px 10px; border-radius:7px; border:1px solid var(--line); background:#100e24; color:var(--cream); margin-bottom:10px}
+  .avatar{position:relative; border-radius:50%; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; background:#100e24}
+  .avatar img{display:block; width:100%; height:100%; object-fit:cover}
+  .avatar .avatar-fallback{display:none; line-height:1}
+  .name-avatar{display:inline-flex; align-items:center; gap:6px}
+  .name-avatar .avatar{width:20px; height:20px; font-size:11px}
 </style>
 </head>
 <body>
@@ -97,6 +102,30 @@
   const $ = (id) => document.getElementById(id);
   let pollTimer = null;
   let lastPlayers = [];
+
+  // player.html과 동일한 캐릭터 목록/아바타 표시 로직 (관리자 화면에서는 참가자가 고른 캐릭터를
+  // 확인만 하는 용도). 나중에 public/characters/char1~4.png를 올리면 자동으로 이미지가 적용됨.
+  const CHARACTERS = [
+    { id: 1, name: "호랑이", emoji: "🐯", color: "#D9A441" },
+    { id: 2, name: "토끼", emoji: "🐰", color: "#4E9F63" },
+    { id: 3, name: "두루미", emoji: "🕊️", color: "#5B8DEF" },
+    { id: 4, name: "여우", emoji: "🦊", color: "#C9598F" },
+  ];
+  function characterById(id) {
+    return CHARACTERS.find((c) => c.id === Number(id)) || null;
+  }
+  function avatarHtml(charId, sizePx) {
+    const c = characterById(charId);
+    if (!c) return '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px"></div>';
+    const fs = Math.round(sizePx * 0.55);
+    return (
+      '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px;border-color:' + c.color + '">' +
+      '<img src="/characters/char' + c.id + '.png" alt="' + c.name + '" ' +
+      'onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\'" />' +
+      '<span class="avatar-fallback" style="font-size:' + fs + 'px">' + c.emoji + "</span>" +
+      "</div>"
+    );
+  }
 
   function creds() {
     return { code: $("roomCode").value.trim().toUpperCase(), key: $("adminKey").value.trim() };
@@ -180,7 +209,8 @@
       const row = document.createElement("div");
       row.className = "row";
       row.innerHTML =
-        '<span><span class="dot ' + (p.connected ? "on" : "") + '"></span>' + p.name + " (#" + (p.seat + 1) + ")</span>" +
+        '<span><span class="dot ' + (p.connected ? "on" : "") + '"></span>' +
+        '<span class="name-avatar">' + avatarHtml(p.characterId, 20) + "<span>" + p.name + " (#" + (p.seat + 1) + ")" + (p.isBot ? " · BOT" : "") + "</span></span></span>" +
         "<span>" + (p.connected ? "연결됨" : "연결 끊김") + "</span>";
       el.appendChild(row);
     });
