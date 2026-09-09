@@ -88,11 +88,17 @@
 
   /* 사각형 보드판(부루마블 스타일): 21칸을 정사각형 둘레에 배치하고, 가운데는 선택한 칸 정보 표시 */
   .squareboard{position:relative; width:100%; aspect-ratio:1/1; max-width:640px; margin:0 auto; background:#160f2e; border:1px solid var(--line); border-radius:14px; overflow:hidden}
-  .sb-tile{position:absolute; width:13.2%; height:13.2%; transform:translate(-50%,-50%); border-radius:6px; border:1px solid var(--line); background:#1a1733; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:2px; cursor:pointer; line-height:1.15; transition:background .15s}
+  .sb-tile{position:absolute; width:13.2%; height:13.2%; transform:translate(-50%,-50%); border-radius:6px; border:1px solid var(--line); background:#1a1733; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:2px; cursor:pointer; line-height:1.15; transition:background .15s; overflow:hidden}
   .sb-tile.start{background:color-mix(in srgb, var(--gold) 28%, #1a1733)}
   .sb-tile.event{background:color-mix(in srgb, #6C5D8A 30%, #1a1733)}
   .sb-tile.here{box-shadow:0 0 0 2px var(--gold) inset}
   .sb-tile.selected{border-color:var(--gold)}
+  /* 칸별 배경 이미지 — 지금은 이미지가 없어서 항상 안 보이고 기존 색상 배경 그대로 나옴.
+     나중에 public/tiles/tile0.png ~ tile20.png(칸 번호 = TILES 배열의 pos값)를 저장소에
+     올리면, 코드 수정 없이 그 칸에 자동으로 사진이 배경으로 깔리고 글씨는 그 위에 그대로 보임. */
+  .sb-tile-img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.6}
+  .sb-tile-shade{position:absolute; inset:0; background:linear-gradient(180deg, rgba(22,15,46,.15), rgba(22,15,46,.8))}
+  .sb-tile .sb-region, .sb-tile .sb-name, .sb-tile .sb-owner, .sb-tile .sb-tokens{position:relative; z-index:1}
   .sb-tile .sb-region{width:6px; height:6px; border-radius:50%; margin-bottom:2px}
   .sb-tile .sb-name{font-weight:700; color:var(--cream); font-size:10.5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .sb-tile .sb-owner{font-size:9px; color:var(--gold); margin-top:1px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
@@ -252,7 +258,7 @@
     return (
       '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px;border-color:' + c.color + '">' +
       '<img src="/characters/char' + c.id + '.png" alt="' + c.name + '" ' +
-      'onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\'" />' +
+      'onerror="this.style.display=\'none\'; if (this.nextElementSibling) this.nextElementSibling.style.display=\'flex\'" />' +
       '<span class="avatar-fallback" style="font-size:' + fs + 'px">' + c.emoji + "</span>" +
       "</div>"
     );
@@ -660,7 +666,14 @@
           "</div>"
         : "";
       const color = tile.type === "city" ? REGION_COLOR[tile.region] : null;
+      // 칸 배경 이미지(있으면) — 파일이 없으면 onerror로 이미지와 어둡게 깔던 막(shade)을
+      // 함께 숨겨서 지금처럼 색상 배경만 그대로 보이게 함.
+      const tileImgHtml =
+        '<img class="sb-tile-img" src="/tiles/tile' + tile.pos + '.png" alt="" ' +
+        "onerror=\"this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='none'\" />" +
+        '<span class="sb-tile-shade"></span>';
       box.innerHTML =
+        tileImgHtml +
         (color ? '<span class="sb-region" style="background:' + color + '"></span>' : "") +
         '<span class="sb-name">' + tile.name + "</span>" +
         ownerHtml +
