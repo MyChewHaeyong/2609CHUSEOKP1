@@ -62,6 +62,24 @@
   .dice-status{font-size:13px; color:#cfcbea; min-height:18px}
   .dice-status.result{color:var(--gold); font-weight:700}
 
+  /* 캐릭터 아바타 — 지금은 이모지로 표시하고, 나중에 public/characters/char1~4.png를
+     저장소에 올리면 자동으로 그 이미지를 우선 사용함(파일이 없으면 이모지로 자동 대체) */
+  .avatar{position:relative; border-radius:50%; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; background:#1a1733}
+  .avatar img{display:block; width:100%; height:100%; object-fit:cover}
+  .avatar .avatar-fallback{display:none; line-height:1}
+  .char-picker{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:6px}
+  .char-option{background:#1a1733; border:2px solid var(--line); border-radius:10px; padding:8px 4px 6px; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; text-align:center}
+  .char-option .avatar{width:40px; height:40px; font-size:20px}
+  .char-option .cname{font-size:11px; color:#cfcbea}
+  .char-option.selected{border-color:var(--gold); background:color-mix(in srgb, var(--gold) 14%, #1a1733)}
+  .char-option.selected .cname{color:var(--gold); font-weight:700}
+  .char-option.taken{opacity:.35; cursor:not-allowed}
+  .char-option.taken .cname{text-decoration:line-through}
+  .char-hint{font-size:11.5px; color:#9d97c2; margin:-2px 0 12px}
+  .name-avatar{display:inline-flex; align-items:center; gap:6px}
+  .name-avatar .avatar{width:22px; height:22px; font-size:12px}
+  .row .name-avatar .avatar{width:20px; height:20px; font-size:11px}
+
   /* 사각형 보드판(부루마블 스타일): 21칸을 정사각형 둘레에 배치하고, 가운데는 선택한 칸 정보 표시 */
   .squareboard{position:relative; width:100%; aspect-ratio:1/1; max-width:460px; margin:0 auto; background:#160f2e; border:1px solid var(--line); border-radius:14px; overflow:hidden}
   .sb-tile{position:absolute; width:13.2%; height:13.2%; transform:translate(-50%,-50%); border-radius:6px; border:1px solid var(--line); background:#1a1733; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:2px; cursor:pointer; line-height:1.15; transition:background .15s}
@@ -73,7 +91,7 @@
   .sb-tile .sb-name{font-weight:700; color:var(--cream); font-size:8.5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .sb-tile .sb-owner{font-size:7.5px; color:var(--gold); margin-top:1px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .sb-tokens{display:flex; gap:2px; margin-top:1px; flex-wrap:wrap; justify-content:center}
-  .sb-token{width:6px; height:6px; border-radius:50%; border:1px solid #1a1733}
+  .sb-token{width:13px; height:13px; border-radius:50%; border:1px solid #1a1733; display:flex; align-items:center; justify-content:center; font-size:9px; line-height:1}
   .sb-center{position:absolute; left:16%; top:16%; right:16%; bottom:16%; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; border:1px dashed var(--line); border-radius:10px}
   .sb-center-inner .cn{font-size:13.5px; font-weight:700; color:var(--gold)}
   .sb-center-inner .ci{font-size:11px; color:#cfcbea; margin-top:4px; line-height:1.5}
@@ -103,6 +121,9 @@
     <input id="nameInput" type="text" maxlength="20" placeholder="예: 큰형님" />
     <label for="codeInput">방 코드 (새로 만들 땐 비워두세요)</label>
     <input id="codeInput" type="text" maxlength="6" placeholder="예: A7K2" style="text-transform:uppercase" />
+    <label>캐릭터 선택</label>
+    <div id="charPicker" class="char-picker"></div>
+    <div class="char-hint">이미 다른 참가자가 고른 캐릭터는 선택할 수 없어요. BOT은 남은 캐릭터 중 무작위로 배정됩니다.</div>
     <button id="joinBtn">입장하기</button>
     <button id="createBtn" class="secondary" style="margin-top:8px">새 방 만들기</button>
     <div id="joinErr" class="err hidden"></div>
@@ -203,6 +224,33 @@
 
   const REGION_COLOR = { cc:"#4E7D57", jl:"#B0602F", gs:"#385E92", sd:"#95315A", jj:"#1E7C70" };
   const TOKEN_COLORS = ["#D9A441", "#4E9F63", "#5B8DEF", "#C9598F"];
+
+  // 캐릭터 4종 — 지금은 이모지로 표시. 나중에 이미지를 저장소의 public/characters/ 폴더에
+  // char1.png ~ char4.png 로 올려두면, 아래 avatarHtml()이 그 이미지를 자동으로 우선 사용하고
+  // (없으면 지금처럼 이모지로 자동 대체되므로) 별도 코드 수정 없이 바로 적용됩니다.
+  const CHARACTERS = [
+    { id: 1, name: "호랑이", emoji: "🐯", color: "#D9A441" },
+    { id: 2, name: "토끼", emoji: "🐰", color: "#4E9F63" },
+    { id: 3, name: "두루미", emoji: "🕊️", color: "#5B8DEF" },
+    { id: 4, name: "여우", emoji: "🦊", color: "#C9598F" },
+  ];
+  function characterById(id) {
+    return CHARACTERS.find((c) => c.id === Number(id)) || null;
+  }
+  function avatarHtml(charId, sizePx) {
+    const c = characterById(charId);
+    if (!c) {
+      return '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px"></div>';
+    }
+    const fs = Math.round(sizePx * 0.55);
+    return (
+      '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px;border-color:' + c.color + '">' +
+      '<img src="/characters/char' + c.id + '.png" alt="' + c.name + '" ' +
+      'onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\'" />' +
+      '<span class="avatar-fallback" style="font-size:' + fs + 'px">' + c.emoji + "</span>" +
+      "</div>"
+    );
+  }
   // 21칸을 정사각형 둘레에 배치한 좌표(%, 왼쪽 위 기준). 모서리는 pos 0/6/11/16.
   const TILE_COORDS = [
     [0, 100], [16.67, 100], [33.33, 100], [50, 100], [66.67, 100], [83.33, 100], [100, 100],
@@ -266,6 +314,44 @@
     return (crypto.randomUUID ? crypto.randomUUID() : "r-" + Date.now() + "-" + Math.random());
   }
 
+  // --- 참가 화면 캐릭터 선택 ---
+  let selectedCharacterId = null;
+  let takenCharacterIds = []; // 방에 이미 입장해 캐릭터를 고른 다른 참가자들의 캐릭터 id 목록
+
+  function renderCharPicker() {
+    const wrap = $("charPicker");
+    wrap.innerHTML = "";
+    CHARACTERS.forEach((c) => {
+      const taken = takenCharacterIds.includes(c.id);
+      const opt = document.createElement("div");
+      opt.className = "char-option" + (selectedCharacterId === c.id ? " selected" : "") + (taken ? " taken" : "");
+      opt.innerHTML = avatarHtml(c.id, 40) + '<div class="cname">' + c.name + "</div>";
+      if (!taken) {
+        opt.addEventListener("click", () => {
+          selectedCharacterId = c.id;
+          renderCharPicker();
+        });
+      }
+      wrap.appendChild(opt);
+    });
+  }
+
+  // 방 코드를 입력하면(참가하려는 방을 알 수 있게 되면) 그 방에서 이미 다른 참가자가
+  // 고른 캐릭터를 미리 확인해서 선택 못하게 비활성화해 둠 — 실제 검증은 서버가 최종적으로 함.
+  async function refreshTakenCharacters(code) {
+    if (!code || code.length < 4) return;
+    try {
+      const res = await fetch("/api/rooms/" + code + "/state");
+      const data = await res.json();
+      if (!data.ok) return;
+      takenCharacterIds = (data.players || []).map((p) => p.characterId).filter((id) => id != null);
+      if (selectedCharacterId && takenCharacterIds.includes(selectedCharacterId)) selectedCharacterId = null;
+      renderCharPicker();
+    } catch (e) {
+      // 방 코드가 아직 잘못됐거나 네트워크 문제일 뿐이므로 조용히 무시 — 최종 검증은 입장 시 서버가 함
+    }
+  }
+
   async function createRoom() {
     const data = await api("/api/rooms", {
       method: "POST",
@@ -274,6 +360,8 @@
     });
     $("codeInput").value = data.roomCode;
     localStorage.setItem("paldomarble_adminkey_" + data.roomCode, data.adminKey);
+    takenCharacterIds = []; // 새로 만든 방이라 아직 아무도 캐릭터를 고르지 않음
+    renderCharPicker();
     await doJoin(data.roomCode);
   }
 
@@ -283,16 +371,18 @@
     $("joinErr").classList.add("hidden");
     if (!name) return showErr("이름을 입력해주세요.");
     if (!code) return showErr("방 코드를 입력하거나 '새 방 만들기'를 눌러주세요.");
+    if (!selectedCharacterId) return showErr("캐릭터를 선택해주세요.");
     try {
       const data = await api("/api/rooms/" + code + "/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, characterId: selectedCharacterId }),
       });
       saveSession({ roomCode: data.roomCode, playerId: data.playerId, token: data.token });
       enterGame();
     } catch (e) {
       showErr(e.message);
+      await refreshTakenCharacters(code); // 다른 사람이 먼저 같은 캐릭터를 고른 경우 등을 화면에 바로 반영
     }
   }
   function showErr(msg) {
@@ -361,7 +451,8 @@
       const isMe = p.id === session.playerId;
       row.innerHTML =
         '<span><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' +
-        '<span class="' + (isMe ? "me" : "") + '">' + p.name + (isMe ? " (나)" : "") + (p.isBot ? " · BOT" : "") + "</span></span>" +
+        '<span class="name-avatar">' + avatarHtml(p.characterId, 20) +
+        '<span class="' + (isMe ? "me" : "") + '">' + p.name + (isMe ? " (나)" : "") + (p.isBot ? " · BOT" : "") + "</span></span></span>" +
         "<span>#" + (p.seat + 1) + "</span>";
       el.appendChild(row);
     });
@@ -387,7 +478,9 @@
     }
     const cur = state.players[state.currentPlayerId];
     const isMe = state.currentPlayerId === session.playerId;
-    $("turnWho").textContent = (cur ? cur.name : "-") + (isMe ? " (나)" : "");
+    $("turnWho").innerHTML = cur
+      ? '<span class="name-avatar">' + avatarHtml(cur.characterId, 22) + "<span>" + cur.name + (isMe ? " (나)" : "") + "</span></span>"
+      : "-";
     const phaseLabel = {
       "awaiting-roll": "주사위를 굴릴 차례",
       "awaiting-buy": "도시 구매를 결정할 차례",
@@ -552,7 +645,12 @@
       }
       const tokensHtml = here
         ? '<div class="sb-tokens">' +
-          posToPlayers[tile.pos].map((p) => '<span class="sb-token" style="background:' + tokenColor(p.seat) + '"></span>').join("") +
+          posToPlayers[tile.pos]
+            .map((p) => {
+              const c = characterById(p.characterId);
+              return '<span class="sb-token" style="background:' + tokenColor(p) + '">' + (c ? c.emoji : "") + "</span>";
+            })
+            .join("") +
           "</div>"
         : "";
       const color = tile.type === "city" ? REGION_COLOR[tile.region] : null;
@@ -566,8 +664,14 @@
     renderCenterInfo(state);
   }
 
-  function tokenColor(seat) {
-    return TOKEN_COLORS[seat % TOKEN_COLORS.length];
+  function tokenColor(seatOrPlayer) {
+    // 캐릭터를 골랐으면 캐릭터 색을, 아직 없으면(구버전 데이터 등) 좌석 순서색을 대신 씀.
+    if (seatOrPlayer && typeof seatOrPlayer === "object") {
+      const c = characterById(seatOrPlayer.characterId);
+      if (c) return c.color;
+      return TOKEN_COLORS[seatOrPlayer.seat % TOKEN_COLORS.length];
+    }
+    return TOKEN_COLORS[seatOrPlayer % TOKEN_COLORS.length];
   }
 
   function renderCenterInfo(state) {
@@ -614,8 +718,10 @@
     body.innerHTML = "";
     state.finalRanking.forEach((r) => {
       const tr = document.createElement("tr");
+      const charId = state.players[r.playerId] ? state.players[r.playerId].characterId : null;
       tr.innerHTML =
-        "<td>" + r.rank + "위</td><td>" + r.name + (r.playerId === session.playerId ? " (나)" : "") + "</td>" +
+        "<td>" + r.rank + "위</td>" +
+        '<td><span class="name-avatar">' + avatarHtml(charId, 20) + "<span>" + r.name + (r.playerId === session.playerId ? " (나)" : "") + "</span></span></td>" +
         '<td class="num">' + fmt(r.netWorth) + "</td>" +
         '<td class="num">' + (r.songpyeon || 0) + "</td>";
       body.appendChild(tr);
@@ -778,6 +884,12 @@
 
   $("createBtn").addEventListener("click", () => createRoom().catch((e) => showErr(e.message)));
   $("joinBtn").addEventListener("click", () => doJoin());
+  let codeCheckTimer = null;
+  $("codeInput").addEventListener("input", () => {
+    clearTimeout(codeCheckTimer);
+    codeCheckTimer = setTimeout(() => refreshTakenCharacters($("codeInput").value.trim().toUpperCase()), 400);
+  });
+  $("codeInput").addEventListener("blur", () => refreshTakenCharacters($("codeInput").value.trim().toUpperCase()));
   $("leaveBtn").addEventListener("click", () => {
     clearInterval(pollTimer);
     localStorage.removeItem("paldomarble_session");
@@ -810,6 +922,7 @@
 
   // 새로고침 시 자동 재접속
   (function init() {
+    renderCharPicker();
     const s = loadSession();
     const urlRoom = new URLSearchParams(location.search).get("room");
     if (s && (!urlRoom || urlRoom.toUpperCase() === s.roomCode)) {
@@ -817,6 +930,7 @@
       enterGame();
     } else if (urlRoom) {
       $("codeInput").value = urlRoom.toUpperCase();
+      refreshTakenCharacters(urlRoom.toUpperCase());
     }
   })();
 </script>
