@@ -63,6 +63,13 @@ CREATE INDEX IF NOT EXISTS idx_players_room ON players(room_code);
 CREATE INDEX IF NOT EXISTS idx_snapshots_room ON snapshots(room_code, id);
 `);
 
+// 캐릭터 선택 기능 추가로 인한 마이그레이션: 이미 배포되어 있던 DB(예: Railway 볼륨)에는
+// players 테이블에 character_id 컬럼이 없을 수 있으므로, 없을 때만 추가합니다.
+const playerColumns = db.prepare("PRAGMA table_info(players)").all().map((c) => c.name);
+if (!playerColumns.includes("character_id")) {
+  db.exec("ALTER TABLE players ADD COLUMN character_id INTEGER");
+}
+
 // ---------------------------------------------------------------------------
 // 유틸리티
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 헷갈리는 0/O, 1/I 제외
@@ -85,8 +92,15 @@ function getRoom(code) {
   return db.prepare("SELECT * FROM rooms WHERE code = ?").get(code);
 }
 function getPlayers(code) {
-  return db.prepare("SELECT id, name, seat, is_bot, last_seen FROM players WHERE room_code = ? ORDER BY seat ASC").all(code);
+  return db
+    .prepare("SELECT id, name, seat, is_bot, character_id, last_seen FROM players WHERE room_code = ? ORDER BY seat ASC")
+    .all(code);
 }
+
+// 캐릭터 4종 (참가자가 입장할 때 하나씩 고르고, BOT은 남은 것 중 무작위로 배정됨).
+// 지금은 이미지 에셋 없이 이모지로 표시하되, 나중에 public/characters/char1.png ~ char4.png
+// 파일을 저장소에 올리면 클라이언트가 자동으로 그 이미지를 우선 사용하도록 만들어 뒀습니다.
+const CHARACTER_IDS = [1, 2, 3, 4];
 function touchPlayer(playerId) {
   db.prepare("UPDATE players SET last_seen = ? WHERE id = ?").run(now(), playerId);
 }
@@ -104,7 +118,14 @@ function saveSnapshot(roomCode, stateVersion, stateJson, label) {
   }
 }
 function publicPlayer(p) {
-  return { id: p.id, name: p.name, seat: p.seat, isBot: !!p.is_bot, connected: now() - p.last_seen < 15000 };
+  return {
+    id: p.id,
+    name: p.name,
+    seat: p.seat,
+    isBot: !!p.is_bot,
+    characterId: p.character_id || null,
+    connected: now() - p.last_seen < 15000,
+  };
 }
 function requireAdmin(req, res, room) {
   const key = req.body?.adminKey || req.query.adminKey;
@@ -136,15 +157,30 @@ app.post("/api/rooms/:code/join", (req, res) => {
   const name = (req.body?.name || "").trim().slice(0, 20);
   if (!name) return res.status(400).json({ ok: false, error: "이름을 입력해주세요." });
 
+  const characterId = Number(req.body?.characterId);
+  if (!CHARACTER_IDS.includes(characterId)) {
+    return res.status(400).json({ ok: false, error: "캐릭터를 선택해주세요." });
+  }
+  const takenIds = db
+    .prepare("SELECT character_id FROM players WHERE room_code = ? AND character_id IS NOT NULL")
+    .all(room.code)
+    .map((r) => r.character_id);
+  if (takenIds.length >= CHARACTER_IDS.length) {
+    return res.status(400).json({ ok: false, error: "이미 모든 캐릭터가 선택되어 더 참가할 수 없습니다." });
+  }
+  if (takenIds.includes(characterId)) {
+    return res.status(400).json({ ok: false, error: "다른 참가자가 이미 선택한 캐릭터입니다. 다른 캐릭터를 골라주세요." });
+  }
+
   const seatRow = db.prepare("SELECT COALESCE(MAX(seat), -1) AS m FROM players WHERE room_code = ?").get(room.code);
   const seat = seatRow.m + 1;
   const playerId = crypto.randomUUID();
   const token = genKey();
   db.prepare(
-    "INSERT INTO players (id, room_code, name, seat, is_bot, token, last_seen) VALUES (?, ?, ?, ?, 0, ?, ?)"
-  ).run(playerId, room.code, name, seat, token, now());
+    "INSERT INTO players (id, room_code, name, seat, is_bot, character_id, token, last_seen) VALUES (?, ?, ?, ?, 0, ?, ?, ?)"
+  ).run(playerId, room.code, name, seat, characterId, token, now());
 
-  res.json({ ok: true, playerId, token, seat, roomCode: room.code, gameMode: room.game_mode });
+  res.json({ ok: true, playerId, token, seat, characterId, roomCode: room.code, gameMode: room.game_mode });
 });
 
 // ---------------------------------------------------------------------------
@@ -311,8 +347,17 @@ app.post("/api/rooms/:code/admin/start-game", (req, res) => {
   // 안 보냈으면 기존처럼 기본 이름 목록을 순서대로 씁니다.
   const requestedNames = Array.isArray(req.body?.botNames) ? req.body.botNames : [];
   const usedNames = new Set(humanPlayers.map((p) => p.name));
+  // 사람이 고르고 남은 캐릭터를 무작위 순서로 섞어서 BOT들에게 하나씩 배정합니다.
+  // (전체 인원이 최대 4명이고 캐릭터도 정확히 4종이라 항상 충분히 남습니다.)
+  const takenCharIds = new Set(humanPlayers.map((p) => p.character_id).filter((id) => id != null));
+  const remainingCharIds = CHARACTER_IDS.filter((id) => !takenCharIds.has(id));
+  for (let i = remainingCharIds.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [remainingCharIds[i], remainingCharIds[j]] = [remainingCharIds[j], remainingCharIds[i]];
+  }
+
   const insertPlayer = db.prepare(
-    "INSERT INTO players (id, room_code, name, seat, is_bot, token, last_seen) VALUES (?, ?, ?, ?, 1, ?, ?)"
+    "INSERT INTO players (id, room_code, name, seat, is_bot, character_id, token, last_seen) VALUES (?, ?, ?, ?, 1, ?, ?, ?)"
   );
   for (let i = 0; i < botsNeeded; i++) {
     let botName = String(requestedNames[i] || "").trim().slice(0, 20);
@@ -320,12 +365,15 @@ app.post("/api/rooms/:code/admin/start-game", (req, res) => {
       botName = BOT_NAME_POOL[i % BOT_NAME_POOL.length] + (i >= BOT_NAME_POOL.length ? `${i + 1}` : "");
     }
     usedNames.add(botName);
-    insertPlayer.run(crypto.randomUUID(), room.code, botName, nextSeat, genKey(), now());
+    const botCharId = remainingCharIds[i] != null ? remainingCharIds[i] : null;
+    insertPlayer.run(crypto.randomUUID(), room.code, botName, nextSeat, botCharId, genKey(), now());
     nextSeat++;
   }
 
   const allPlayers = db.prepare("SELECT * FROM players WHERE room_code = ? ORDER BY seat ASC").all(room.code);
-  const gameState = Game.initState(allPlayers.map((p) => ({ id: p.id, name: p.name, seat: p.seat, isBot: !!p.is_bot })));
+  const gameState = Game.initState(
+    allPlayers.map((p) => ({ id: p.id, name: p.name, seat: p.seat, isBot: !!p.is_bot, characterId: p.character_id || null }))
+  );
   Game.runBotsIfNeeded(gameState, now());
 
   const newVersion = room.state_version + 1;
