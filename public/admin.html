@@ -121,7 +121,7 @@
     return (
       '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px;border-color:' + c.color + '">' +
       '<img src="/characters/char' + c.id + '.png" alt="' + c.name + '" ' +
-      'onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\'" />' +
+      'onerror="this.style.display=\'none\'; if (this.nextElementSibling) this.nextElementSibling.style.display=\'flex\'" />' +
       '<span class="avatar-fallback" style="font-size:' + fs + 'px">' + c.emoji + "</span>" +
       "</div>"
     );
