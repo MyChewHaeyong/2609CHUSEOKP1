@@ -154,6 +154,9 @@ app.post("/api/rooms", (req, res) => {
 app.post("/api/rooms/:code/join", (req, res) => {
   const room = getRoom(req.params.code);
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (room.status !== "waiting") {
+    return res.status(400).json({ ok: false, error: "이미 게임이 시작되어 더 이상 입장할 수 없습니다." });
+  }
   const name = (req.body?.name || "").trim().slice(0, 20);
   if (!name) return res.status(400).json({ ok: false, error: "이름을 입력해주세요." });
 
@@ -429,15 +432,22 @@ app.post("/api/rooms/:code/admin/undo", (req, res) => {
   const target = rows[1] || rows[0];
   if (!target) return res.status(400).json({ ok: false, error: "되돌릴 이전 상태가 없습니다." });
 
-  db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, updated_at = ? WHERE code = ?").run(
+  // status 컬럼도 되돌아간 상태의 phase에 맞게 함께 갱신해야 함. (예전 버그: 강제 종료 후
+  // 되돌리기를 하면 state.phase는 다시 playing이 되는데 rooms.status는 ended로 남아서,
+  // 화면에는 계속 "게임 종료"로 표시되는 불일치가 생겼었음)
+  const targetState = JSON.parse(target.state_json);
+  const newStatus = targetState.phase === "ended" ? "ended" : targetState.phase === "waiting" || !targetState.phase ? "waiting" : "playing";
+
+  db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, status = ?, updated_at = ? WHERE code = ?").run(
     target.state_json,
     target.state_version,
+    newStatus,
     now(),
     room.code
   );
   if (rows[0]) db.prepare("DELETE FROM snapshots WHERE id = ?").run(rows[0].id);
 
-  res.json({ ok: true, stateVersion: target.state_version, state: JSON.parse(target.state_json) });
+  res.json({ ok: true, stateVersion: target.state_version, state: targetState });
 });
 
 app.post("/api/rooms/:code/admin/emergency-action", (req, res) => {
@@ -489,9 +499,11 @@ app.post("/api/rooms/:code/admin/import", (req, res) => {
     ).run(data.room.game_mode, data.room.status, data.room.state_version, data.room.state_json, now(), room.code);
     db.prepare("DELETE FROM players WHERE room_code = ?").run(room.code);
     const ins = db.prepare(
-      "INSERT INTO players (id, room_code, name, seat, is_bot, token, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO players (id, room_code, name, seat, is_bot, character_id, token, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     );
-    (data.players || []).forEach((p) => ins.run(p.id, room.code, p.name, p.seat, p.is_bot, p.token, p.last_seen));
+    (data.players || []).forEach((p) =>
+      ins.run(p.id, room.code, p.name, p.seat, p.is_bot, p.character_id != null ? p.character_id : null, p.token, p.last_seen)
+    );
   });
   tx();
   saveSnapshot(room.code, data.room.state_version, data.room.state_json, "관리자 복원");
