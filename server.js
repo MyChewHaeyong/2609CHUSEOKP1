@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const express = require("express");
 const Database = require("better-sqlite3");
 const Game = require("./game.js");
+const Game2 = require("./game2.js"); // 2부 만찬경매
 
 const app = express();
 app.use(express.json());
@@ -127,6 +128,28 @@ function publicPlayer(p) {
     connected: now() - p.last_seen < 15000,
   };
 }
+// 2부(만찬경매) state.phase를 rooms.status 컬럼(waiting/playing/ended)으로 매핑.
+// 1부의 undo 버그 수정 때와 같은 이유로, 상태를 저장할 때마다 항상 이 매핑을 같이 갱신해야
+// join 가능 여부(waiting 체크) 등이 화면과 어긋나지 않습니다.
+function auctionStatusFor(phase) {
+  if (phase === "ended") return "ended";
+  if (!phase || phase === "waiting") return "waiting";
+  return "playing"; // bidding / table-review / voting
+}
+function persistState(room, state, label, status) {
+  const newVersion = room.state_version + 1;
+  const stateJson = JSON.stringify(state);
+  db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, status = ?, updated_at = ? WHERE code = ?").run(
+    stateJson,
+    newVersion,
+    status,
+    now(),
+    room.code
+  );
+  saveSnapshot(room.code, newVersion, stateJson, label);
+  return newVersion;
+}
+
 function requireAdmin(req, res, room) {
   const key = req.body?.adminKey || req.query.adminKey;
   if (!key || key !== room.admin_key) {
@@ -196,6 +219,30 @@ app.get("/api/rooms/:code/state", (req, res) => {
   if (playerId && token) {
     const p = db.prepare("SELECT * FROM players WHERE id = ? AND room_code = ?").get(playerId, room.code);
     if (p && p.token === token) touchPlayer(playerId);
+  }
+
+  // 2부(만찬경매)는 실시간 타이머(품목당 5분, 투표 5분)가 있어서, 클라이언트가 폴링할 때마다
+  // 마감 시간이 지났는지 확인해 필요하면 여기서 즉시 처리합니다(별도 스케줄러 없이, 1부의
+  // 90분 통행료 인상 타이머와 같은 "읽을 때 계산" 방식). adminKey가 맞으면 관리자 전용 정보
+  // (투표 중 실시간 득표수)도 함께 내려줍니다.
+  if (room.game_mode === "auction") {
+    const state = JSON.parse(room.state_json);
+    const changed = Game2.tick(state, now());
+    let stateVersion = room.state_version;
+    if (changed) {
+      stateVersion = persistState(room, state, "자동 진행(타이머)", auctionStatusFor(state.phase));
+    }
+    const isAdmin = !!(req.query.adminKey && req.query.adminKey === room.admin_key);
+    return res.json({
+      ok: true,
+      roomCode: room.code,
+      gameMode: room.game_mode,
+      status: auctionStatusFor(state.phase),
+      stateVersion,
+      state: Game2.serializeForClient(state, { forAdmin: isAdmin }),
+      players: getPlayers(room.code).map(publicPlayer),
+      serverTime: now(),
+    });
   }
 
   res.json({
@@ -268,6 +315,17 @@ function applyAction(room, player, type, payload) {
     Game.applyPlayerAction(state, player.id, type, payload, now());
     stateChanged = true;
     newStatus = state.phase === "ended" ? "ended" : "playing";
+  } else if (room.game_mode === "auction") {
+    // 폴링과 마찬가지로, 입찰을 처리하기 전에 먼저 마감 시간이 지나지 않았는지 확인합니다
+    // (거의 동시에 타이머가 끝난 경우 "이미 끝난 라운드에 입찰"을 막기 위함).
+    Game2.tick(state, now());
+    if (type === "bid") {
+      Game2.placeBid(state, player.id, payload?.amount, now());
+    } else {
+      throw new Error("알 수 없는 행동입니다: " + type);
+    }
+    stateChanged = true;
+    newStatus = auctionStatusFor(state.phase);
   } else {
     throw new Error("알 수 없는 행동입니다: " + type);
   }
@@ -283,7 +341,10 @@ function applyAction(room, player, type, payload) {
       room.code
     );
     saveSnapshot(room.code, newVersion, stateJson, `action:${type}`);
-    return { stateVersion: newVersion, state };
+    // 2부는 서버 내부 상태(경매 순서 등 비밀 정보)를 그대로 돌려주면 안 되므로, 응답에는
+    // 항상 마스킹된 클라이언트용 상태만 담습니다.
+    const responseState = room.game_mode === "auction" ? Game2.serializeForClient(state, { forAdmin: false }) : state;
+    return { stateVersion: newVersion, state: responseState };
   }
   return { stateVersion: room.state_version, state };
 }
@@ -390,6 +451,153 @@ app.post("/api/rooms/:code/admin/start-game", (req, res) => {
   saveSnapshot(room.code, newVersion, stateJson, "게임 시작");
 
   res.json({ ok: true, stateVersion: newVersion, state: gameState, players: getPlayers(room.code).map(publicPlayer) });
+});
+
+// ---------------------------------------------------------------------------
+// 2부 만찬경매 — 1부와 같은 방/입장/캐릭터 선택 엔진을 그대로 재사용하고,
+// 게임 로직만 game2.js로 분리했습니다.
+
+// 2부 경매 시작: 1부와 동일하게 부족한 자리는 BOT으로 채우고, 각 사람 참가자에게 1부 등수
+// (ranks)에 맞는 시드머니를 지급한 뒤 14개 품목 블라인드 경매를 시작합니다. ranks/part1Assets는
+// 1부와 2부가 서로 다른 방이라 시스템이 자동으로 이어줄 방법이 없어 관리자가 직접 넘겨줍니다
+// (2부 규칙서: 등수 정보가 없으면 전원 2등 시드머니를 기본값으로 씀).
+app.post("/api/rooms/:code/admin/start-auction", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  if (room.game_mode !== "auction") {
+    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+  }
+  const existing = JSON.parse(room.state_json);
+  if (existing.phase && existing.phase !== "waiting") {
+    return res.status(400).json({ ok: false, error: "이미 경매가 시작되었습니다." });
+  }
+
+  let totalPlayers = Number(req.body?.totalPlayers) || 4;
+  totalPlayers = Math.max(1, Math.min(4, totalPlayers));
+
+  const humanPlayers = db
+    .prepare("SELECT * FROM players WHERE room_code = ? AND is_bot = 0 ORDER BY seat ASC")
+    .all(room.code);
+  if (humanPlayers.length < 1) {
+    return res.status(400).json({ ok: false, error: "참가자가 최소 1명 이상 있어야 게임을 시작할 수 있습니다." });
+  }
+  if (humanPlayers.length > totalPlayers) {
+    return res.status(400).json({
+      ok: false,
+      error: `참가 인원(${humanPlayers.length}명)이 설정한 전체 인원수(${totalPlayers}명)보다 많습니다.`,
+    });
+  }
+
+  let nextSeat = db.prepare("SELECT COALESCE(MAX(seat), -1) AS m FROM players WHERE room_code = ?").get(room.code).m + 1;
+  const botsNeeded = totalPlayers - humanPlayers.length;
+  const requestedNames = Array.isArray(req.body?.botNames) ? req.body.botNames : [];
+  const usedNames = new Set(humanPlayers.map((p) => p.name));
+  const takenCharIds = new Set(humanPlayers.map((p) => p.character_id).filter((id) => id != null));
+  const remainingCharIds = CHARACTER_IDS.filter((id) => !takenCharIds.has(id));
+  for (let i = remainingCharIds.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [remainingCharIds[i], remainingCharIds[j]] = [remainingCharIds[j], remainingCharIds[i]];
+  }
+
+  const insertPlayer = db.prepare(
+    "INSERT INTO players (id, room_code, name, seat, is_bot, character_id, token, last_seen) VALUES (?, ?, ?, ?, 1, ?, ?, ?)"
+  );
+  for (let i = 0; i < botsNeeded; i++) {
+    let botName = String(requestedNames[i] || "").trim().slice(0, 20);
+    if (!botName || usedNames.has(botName)) {
+      botName = BOT_NAME_POOL[i % BOT_NAME_POOL.length] + (i >= BOT_NAME_POOL.length ? `${i + 1}` : "");
+    }
+    usedNames.add(botName);
+    const botCharId = remainingCharIds[i] != null ? remainingCharIds[i] : null;
+    insertPlayer.run(crypto.randomUUID(), room.code, botName, nextSeat, botCharId, genKey(), now());
+    nextSeat++;
+  }
+
+  const allPlayers = db.prepare("SELECT * FROM players WHERE room_code = ? ORDER BY seat ASC").all(room.code);
+  const ranks = req.body?.ranks && typeof req.body.ranks === "object" ? req.body.ranks : {};
+  const part1Assets = req.body?.part1Assets && typeof req.body.part1Assets === "object" ? req.body.part1Assets : {};
+
+  let gameState;
+  try {
+    gameState = Game2.initState(
+      allPlayers.map((p) => ({ id: p.id, name: p.name, isBot: !!p.is_bot, characterId: p.character_id || null })),
+      ranks,
+      part1Assets,
+      now()
+    );
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: e.message });
+  }
+
+  const newVersion = persistState(room, gameState, "경매 시작", auctionStatusFor(gameState.phase));
+  res.json({ ok: true, stateVersion: newVersion, players: getPlayers(room.code).map(publicPlayer) });
+});
+
+// 2부 투표 열기: 14개 품목 경매가 전부 끝난 뒤(table-review) 관리자가 준비되면 5분 투표를 시작합니다.
+app.post("/api/rooms/:code/admin/start-vote", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  if (room.game_mode !== "auction") {
+    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+  }
+  const state = JSON.parse(room.state_json);
+  Game2.tick(state, now());
+  try {
+    Game2.startVoting(state, now());
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: e.message });
+  }
+  const newVersion = persistState(room, state, "투표 시작", auctionStatusFor(state.phase));
+  res.json({ ok: true, stateVersion: newVersion, state: Game2.serializeForClient(state, { forAdmin: true }) });
+});
+
+// 2부 투표 조기 종료: 5분을 다 기다리지 않고 관리자가 즉시 마감합니다.
+app.post("/api/rooms/:code/admin/close-vote", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  if (room.game_mode !== "auction") {
+    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+  }
+  const state = JSON.parse(room.state_json);
+  try {
+    Game2.closeVoting(state, now());
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: e.message });
+  }
+  const newVersion = persistState(room, state, "투표 조기 종료", auctionStatusFor(state.phase));
+  res.json({ ok: true, stateVersion: newVersion, state: Game2.serializeForClient(state, { forAdmin: true }) });
+});
+
+// 2부 시청자 투표: 로그인 없는 공개 링크에서 호출됩니다. 방 참가자 토큰이 아니라 브라우저에
+// 저장된 voterToken + 접속 IP 조합으로 중복 투표를 막습니다(로그인 시스템이 없는 만큼 완벽한
+// 부정 방지는 아니라는 점을 2부 규칙서에 명시해 두었습니다).
+app.post("/api/rooms/:code/vote", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (room.game_mode !== "auction") {
+    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+  }
+  const { voterToken, targetPlayerId } = req.body || {};
+  if (!voterToken || !targetPlayerId) {
+    return res.status(400).json({ ok: false, error: "요청에 필요한 값이 빠졌습니다." });
+  }
+  const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "unknown";
+  const voterKey = crypto.createHash("sha256").update(`${voterToken}:${ip}`).digest("hex");
+
+  const state = JSON.parse(room.state_json);
+  const tickChanged = Game2.tick(state, now());
+  try {
+    Game2.submitVote(state, voterKey, targetPlayerId, now());
+  } catch (e) {
+    // 투표는 실패했더라도, 위 tick()이 마침 마감 시점을 감지해 상태를 바꿨다면 그 결과는 저장합니다.
+    if (tickChanged) persistState(room, state, "투표 마감(자동)", auctionStatusFor(state.phase));
+    return res.status(400).json({ ok: false, error: e.message });
+  }
+  persistState(room, state, "시청자 투표", auctionStatusFor(state.phase));
+  res.json({ ok: true });
 });
 
 // 비상 강제 종료: 방송 시간이 다 되어 "최후 1인 생존"을 기다릴 수 없을 때, 지금 이 순간의
