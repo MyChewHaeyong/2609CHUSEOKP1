@@ -307,11 +307,19 @@ app.post("/api/rooms/:code/admin/start-game", (req, res) => {
 
   let nextSeat = db.prepare("SELECT COALESCE(MAX(seat), -1) AS m FROM players WHERE room_code = ?").get(room.code).m + 1;
   const botsNeeded = totalPlayers - humanPlayers.length;
+  // 방장이 BOT 이름을 직접 입력했으면 그 이름을 쓰고(빈 칸/중복이면 기본 이름으로 대체),
+  // 안 보냈으면 기존처럼 기본 이름 목록을 순서대로 씁니다.
+  const requestedNames = Array.isArray(req.body?.botNames) ? req.body.botNames : [];
+  const usedNames = new Set(humanPlayers.map((p) => p.name));
   const insertPlayer = db.prepare(
     "INSERT INTO players (id, room_code, name, seat, is_bot, token, last_seen) VALUES (?, ?, ?, ?, 1, ?, ?)"
   );
   for (let i = 0; i < botsNeeded; i++) {
-    const botName = BOT_NAME_POOL[i % BOT_NAME_POOL.length] + (i >= BOT_NAME_POOL.length ? `${i + 1}` : "");
+    let botName = String(requestedNames[i] || "").trim().slice(0, 20);
+    if (!botName || usedNames.has(botName)) {
+      botName = BOT_NAME_POOL[i % BOT_NAME_POOL.length] + (i >= BOT_NAME_POOL.length ? `${i + 1}` : "");
+    }
+    usedNames.add(botName);
     insertPlayer.run(crypto.randomUUID(), room.code, botName, nextSeat, genKey(), now());
     nextSeat++;
   }
