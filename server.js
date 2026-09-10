@@ -150,6 +150,39 @@ function persistState(room, state, label, status) {
   return newVersion;
 }
 
+// 1부 결과로 2부 시드머니 자동 연결: 1부 방 코드를 넘기면, 그 방의 최종 등수(finalRanking)에서
+// 사람 참가자를 "이름"으로 매칭해 2부 등수(ranks)와 타이브레이커용 자산액(part1Assets)을
+// 자동으로 만들어 줍니다. 두 방이 서로 다른 방이라 playerId가 다르기 때문에 이름 매칭을
+// 쓰고, 이름이 안 맞아 매칭에 실패한 사람은 unmatched로 보고해서 관리자가 필요하면 수동
+// ranks로 보정할 수 있게 합니다(1부에서 이미 사람인지 BOT인지 구분되므로 BOT은 매칭 대상에서
+// 제외합니다).
+function deriveRanksFromPart1(part1Room, currentHumanPlayers) {
+  const result = { ranks: {}, part1Assets: {}, matched: [], unmatched: [] };
+  if (!part1Room) {
+    currentHumanPlayers.forEach((p) => result.unmatched.push(p.name));
+    return result;
+  }
+  const part1State = JSON.parse(part1Room.state_json);
+  const finalRanking = part1State.finalRanking || [];
+  const byName = new Map();
+  finalRanking.forEach((r) => {
+    const isBot = !!part1State.players?.[r.playerId]?.isBot;
+    if (!isBot && !byName.has(r.name)) byName.set(r.name, r);
+  });
+
+  currentHumanPlayers.forEach((p) => {
+    const r = byName.get(p.name);
+    if (r) {
+      result.ranks[p.id] = r.rank;
+      result.part1Assets[p.id] = r.netWorth;
+      result.matched.push({ playerId: p.id, name: p.name, rank: r.rank, netWorth: r.netWorth });
+    } else {
+      result.unmatched.push(p.name);
+    }
+  });
+  return result;
+}
+
 function requireAdmin(req, res, room) {
   const key = req.body?.adminKey || req.query.adminKey;
   if (!key || key !== room.admin_key) {
@@ -461,6 +494,35 @@ app.post("/api/rooms/:code/admin/start-game", (req, res) => {
 // (ranks)에 맞는 시드머니를 지급한 뒤 14개 품목 블라인드 경매를 시작합니다. ranks/part1Assets는
 // 1부와 2부가 서로 다른 방이라 시스템이 자동으로 이어줄 방법이 없어 관리자가 직접 넘겨줍니다
 // (2부 규칙서: 등수 정보가 없으면 전원 2등 시드머니를 기본값으로 씀).
+// 2부 경매를 실제로 시작하기 전에, 1부 방 코드로 등수 매칭이 잘 되는지 미리 확인할 수 있는
+// 조회 전용 엔드포인트입니다(상태를 바꾸지 않음). 이름이 하나라도 안 맞으면 여기서 미리 보고
+// admin/start-auction 호출 시 ranks/part1Assets로 수동 보정해서 넘길 수 있습니다.
+app.get("/api/rooms/:code/admin/part1-preview", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  if (room.game_mode !== "auction") {
+    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+  }
+  const part1RoomCode = String(req.query.part1RoomCode || "").toUpperCase();
+  const part1Room = getRoom(part1RoomCode);
+  if (!part1Room || part1Room.game_mode !== "paldomarble") {
+    return res.status(400).json({ ok: false, error: "1부 방 코드가 올바르지 않습니다." });
+  }
+  const part1State = JSON.parse(part1Room.state_json);
+  if (part1State.phase !== "ended") {
+    return res.status(400).json({ ok: false, error: "1부 게임이 아직 끝나지 않아 등수가 확정되지 않았습니다." });
+  }
+  const humanPlayers = db
+    .prepare("SELECT * FROM players WHERE room_code = ? AND is_bot = 0 ORDER BY seat ASC")
+    .all(room.code);
+  const match = deriveRanksFromPart1(
+    part1Room,
+    humanPlayers.map((p) => ({ id: p.id, name: p.name }))
+  );
+  res.json({ ok: true, ...match });
+});
+
 app.post("/api/rooms/:code/admin/start-auction", (req, res) => {
   const room = getRoom(req.params.code);
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
@@ -515,8 +577,29 @@ app.post("/api/rooms/:code/admin/start-auction", (req, res) => {
   }
 
   const allPlayers = db.prepare("SELECT * FROM players WHERE room_code = ? ORDER BY seat ASC").all(room.code);
-  const ranks = req.body?.ranks && typeof req.body.ranks === "object" ? req.body.ranks : {};
-  const part1Assets = req.body?.part1Assets && typeof req.body.part1Assets === "object" ? req.body.part1Assets : {};
+  let ranks = req.body?.ranks && typeof req.body.ranks === "object" ? req.body.ranks : {};
+  let part1Assets = req.body?.part1Assets && typeof req.body.part1Assets === "object" ? req.body.part1Assets : {};
+
+  // fromPart1RoomCode를 넘기면 그 1부 방의 최종 등수를 이름으로 매칭해서 자동으로 ranks/
+  // part1Assets를 채웁니다. 요청에 ranks/part1Assets를 같이 넘기면(이름이 하나라도 안 맞았을
+  // 때 수동 보정용) 그 값이 자동 매칭 결과보다 우선합니다.
+  let part1Match = null;
+  if (req.body?.fromPart1RoomCode) {
+    const part1Room = getRoom(String(req.body.fromPart1RoomCode).toUpperCase());
+    if (!part1Room || part1Room.game_mode !== "paldomarble") {
+      return res.status(400).json({ ok: false, error: "1부 방 코드가 올바르지 않습니다." });
+    }
+    const part1State = JSON.parse(part1Room.state_json);
+    if (part1State.phase !== "ended") {
+      return res.status(400).json({ ok: false, error: "1부 게임이 아직 끝나지 않아 등수가 확정되지 않았습니다." });
+    }
+    part1Match = deriveRanksFromPart1(
+      part1Room,
+      humanPlayers.map((p) => ({ id: p.id, name: p.name }))
+    );
+    ranks = { ...part1Match.ranks, ...ranks };
+    part1Assets = { ...part1Match.part1Assets, ...part1Assets };
+  }
 
   let gameState;
   try {
@@ -531,7 +614,12 @@ app.post("/api/rooms/:code/admin/start-auction", (req, res) => {
   }
 
   const newVersion = persistState(room, gameState, "경매 시작", auctionStatusFor(gameState.phase));
-  res.json({ ok: true, stateVersion: newVersion, players: getPlayers(room.code).map(publicPlayer) });
+  res.json({
+    ok: true,
+    stateVersion: newVersion,
+    players: getPlayers(room.code).map(publicPlayer),
+    part1Match, // fromPart1RoomCode를 안 넘겼으면 null. 넘겼으면 { matched, unmatched, ranks, part1Assets }
+  });
 });
 
 // 2부 투표 열기: 14개 품목 경매가 전부 끝난 뒤(table-review) 관리자가 준비되면 5분 투표를 시작합니다.
