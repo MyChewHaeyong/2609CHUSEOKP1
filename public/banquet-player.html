@@ -156,6 +156,17 @@
         <div id="bidMsg" class="err hidden"></div>
       </div>
 
+      <div id="roundResultBanner" class="panel hidden" style="text-align:center; border-color:var(--gold)">
+        <h2 style="margin-bottom:4px" id="resultTitle">공개!</h2>
+        <div class="itemgrid" id="resultThumbWrap" style="max-width:120px; margin:6px auto"></div>
+        <p style="font-size:16px; font-weight:700; margin:8px 0 2px" id="resultWinnerLine"></p>
+        <p class="sub" style="margin:0" id="resultPriceLine"></p>
+        <p class="sub" style="margin:10px 0 0" id="resultNextLine"></p>
+        <div id="nextRoundBox" class="hidden" style="margin-top:10px">
+          <button id="nextRoundBtn">다음 품목 시작</button>
+        </div>
+      </div>
+
       <div id="tableReviewBanner" class="panel hidden" style="text-align:center">
         <h2 style="margin-bottom:4px">경매 종료!</h2>
         <p class="sub" style="margin:0">완성된 차례상으로 곧 시청자 투표가 시작됩니다. 잠시만 기다려주세요.</p>
@@ -417,15 +428,17 @@
     $("startPanel").classList.add("hidden");
     $("gameBoard").classList.remove("hidden");
 
-    const phaseLabel = { bidding: "경매 진행 중", "table-review": "경매 종료", voting: "투표 진행 중", ended: "종료" };
+    const phaseLabel = { bidding: "경매 진행 중", "round-result": "품목 결과 공개", "table-review": "경매 종료", voting: "투표 진행 중", ended: "종료" };
     $("phaseLine").textContent = (phaseLabel[st.phase] || st.phase) + " · 참가자 " + players.length + "명";
 
     $("biddingArea").classList.toggle("hidden", st.phase !== "bidding");
+    $("roundResultBanner").classList.toggle("hidden", st.phase !== "round-result");
     $("tableReviewBanner").classList.toggle("hidden", st.phase !== "table-review");
     $("votingBanner").classList.toggle("hidden", st.phase !== "voting");
     $("rankPanel").classList.toggle("hidden", st.phase !== "ended");
 
     if (st.phase === "bidding" && st.currentRound) renderBidding(st.currentRound, data.serverTime);
+    if (st.phase === "round-result" && st.lastResult) renderRoundResult(st.lastResult, st.nextRoundNumber, st.totalRounds, st.players || {}, isCreator);
     if (st.phase === "table-review") $("startVoteBox").classList.toggle("hidden", !isCreator);
     if (st.phase === "voting") {
       $("closeVoteBox").classList.toggle("hidden", !isCreator);
@@ -504,6 +517,28 @@
     $("manualBidBtn").disabled = !!isMineWinning || busy;
     // 최고 입찰자는 포기할 수 없음(서버도 거부하지만, 화면에서 먼저 비활성화해서 헛클릭을 줄임)
     $("passBidBtn").disabled = !!isMineWinning || busy;
+  }
+
+  function renderRoundResult(lastResult, nextRoundNumber, totalRounds, statePlayers, isCreator) {
+    $("resultTitle").textContent = "공개! " + lastResult.name;
+    const thumbWrap = $("resultThumbWrap");
+    thumbWrap.innerHTML = "";
+    const cell = document.createElement("div");
+    cell.className = "itemcell won";
+    cell.innerHTML = itemThumb(lastResult.slug) + "<div>" + lastResult.name + "</div>";
+    thumbWrap.appendChild(cell);
+
+    if (lastResult.winnerId) {
+      const w = statePlayers[lastResult.winnerId];
+      $("resultWinnerLine").textContent = (w ? w.name : "?") + " 낙찰";
+      $("resultPriceLine").textContent = fmt(lastResult.finalPrice) + "원";
+    } else {
+      $("resultWinnerLine").textContent = "유찰 (입찰 없음)";
+      $("resultPriceLine").textContent = "";
+    }
+    $("resultNextLine").textContent =
+      nextRoundNumber <= totalRounds ? "다음 품목: " + nextRoundNumber + " / " + totalRounds : "";
+    $("nextRoundBox").classList.toggle("hidden", !isCreator);
   }
 
   async function placeBid(amount) {
@@ -623,18 +658,56 @@
     });
   }
 
+  // 참가자 목록은 입찰창(roundcard)보다 DOM 순서상 위에 있어서, 여기를 매초(폴링 주기)
+  // innerHTML로 통째로 지웠다가 새로 만들면 그 미세한 높이 차이가 아래에 있는 입찰창을
+  // 위아래로 밀어 "화면이 흔들린다"는 문제로 그대로 드러납니다. 그래서 이 목록도 빠른 입찰
+  // 버튼과 같은 방식으로, 참가자별 DOM 노드를 한 번만 만들어두고 이후에는 내용만 갱신합니다.
+  const playerRowEls = new Map(); // playerId -> { row, dot, nameWrap, nameText, status, charId }
   function renderPlayerList(players) {
     const el = $("playerList");
-    el.innerHTML = "";
+    const seen = new Set();
     players.forEach((p) => {
-      const row = document.createElement("div");
-      row.className = "row";
-      row.innerHTML =
-        '<span><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' +
-        '<span class="name-avatar">' + avatarHtml(p.characterId, 20) + "<span>" + p.name + (p.isBot ? " · BOT" : "") + "</span></span></span>" +
-        "<span>" + (p.connected || p.isBot ? "" : "연결 끊김") + "</span>";
-      el.appendChild(row);
+      seen.add(p.id);
+      let refs = playerRowEls.get(p.id);
+      if (!refs) {
+        const row = document.createElement("div");
+        row.className = "row";
+        const left = document.createElement("span");
+        const dot = document.createElement("span");
+        dot.className = "dot";
+        const nameWrap = document.createElement("span");
+        nameWrap.className = "name-avatar";
+        const nameText = document.createElement("span");
+        nameWrap.appendChild(nameText);
+        left.appendChild(dot);
+        left.appendChild(nameWrap);
+        const status = document.createElement("span");
+        row.appendChild(left);
+        row.appendChild(status);
+        el.appendChild(row);
+        refs = { row, dot, nameWrap, nameText, status, charId: undefined };
+        playerRowEls.set(p.id, refs);
+      }
+      const connected = !!(p.connected || p.isBot);
+      const dotClass = "dot" + (connected ? " on" : "");
+      if (refs.dot.className !== dotClass) refs.dot.className = dotClass;
+      if (refs.charId !== p.characterId) {
+        refs.nameWrap.innerHTML = avatarHtml(p.characterId, 20);
+        refs.nameWrap.appendChild(refs.nameText);
+        refs.charId = p.characterId;
+      }
+      const nameLabel = p.name + (p.isBot ? " · BOT" : "");
+      if (refs.nameText.textContent !== nameLabel) refs.nameText.textContent = nameLabel;
+      const statusLabel = connected ? "" : "연결 끊김";
+      if (refs.status.textContent !== statusLabel) refs.status.textContent = statusLabel;
     });
+    // 나간 참가자(이론상 거의 없지만, 방어적으로) 노드 정리
+    for (const [id, refs] of playerRowEls) {
+      if (!seen.has(id)) {
+        refs.row.remove();
+        playerRowEls.delete(id);
+      }
+    }
   }
 
   function renderLog(log) {
@@ -684,6 +757,19 @@
     } catch (e) {
       $("startMsg").textContent = "경매 시작 실패: " + e.message;
       $("startMsg").classList.remove("hidden");
+    }
+  });
+
+  $("nextRoundBtn").addEventListener("click", async () => {
+    try {
+      await api("/api/rooms/" + session.roomCode + "/admin/next-round", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: myAdminKey }),
+      });
+      poll();
+    } catch (e) {
+      alert("다음 품목 시작 실패: " + e.message);
     }
   });
 
