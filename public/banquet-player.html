@@ -54,6 +54,9 @@
   .roundcard .bidline{font-size:13.5px; color:#cfcbea; margin-bottom:10px}
   .bidbtns{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:8px}
   .bidbtns button{margin-bottom:0; font-size:12.5px; padding:9px 2px}
+  .manualbid-row{display:flex; gap:6px; margin-bottom:8px}
+  .manualbid-row input{flex:1; margin-bottom:0; text-align:right; font-variant-numeric:tabular-nums}
+  .manualbid-row button{width:auto; flex-shrink:0; padding:0 16px; margin-bottom:0}
 
   .itemgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:8px}
   .itemcell{background:#1a1733; border:1px solid var(--line); border-radius:8px; padding:8px 4px; text-align:center; font-size:11px; color:#9d97c2}
@@ -140,8 +143,15 @@
           <div class="rtitle" id="roundTitle">미공개 품목 - / 14</div>
           <div class="timer" id="roundTimer">--:--</div>
           <div class="bidline" id="bidLine">아직 입찰이 없습니다. 시작가 -</div>
-          <div class="bidbtns" id="bidBtns"></div>
-          <button id="manualBidBtn" class="secondary" type="button">직접 금액 입력해서 입찰</button>
+          <div id="passedNotice" class="hidden" style="font-size:13px; color:#9d97c2; margin:2px 0 10px">이번 품목은 입찰을 포기했습니다. 다음 품목부터 다시 참여할 수 있어요.</div>
+          <div id="bidControls">
+            <div class="bidbtns" id="bidBtns"></div>
+            <div class="manualbid-row">
+              <input id="manualBidInput" type="number" inputmode="numeric" min="0" step="10000" placeholder="직접 금액 입력" />
+              <button id="manualBidBtn" class="secondary" type="button">입찰</button>
+            </div>
+            <button id="passBidBtn" class="danger" type="button">이번 품목 포기</button>
+          </div>
         </div>
         <div id="bidMsg" class="err hidden"></div>
       </div>
@@ -424,7 +434,7 @@
     if (st.phase === "ended" && st.results) renderResults(st.results, players);
 
     const me = st.players ? st.players[session.playerId] : null;
-    $("myCash").textContent = me ? fmt(me.cash) + " 엽전" : "-";
+    $("myCash").textContent = me ? fmt(me.cash) + " 원" : "-";
     renderMyItems(me);
     renderItemLegend(st.publicItemList || [], st.itemResults || []);
     renderOpponents(players, st.players || {});
@@ -446,12 +456,18 @@
     $("roundTitle").textContent = "미공개 품목 " + round.roundNumber + " / " + round.totalRounds;
     renderCountdown("roundTimer", round.deadlineAt, serverTime);
     if (round.currentBid) {
-      $("bidLine").textContent = "현재 최고가 " + fmt(round.currentBid.amount) + " (입찰자 있음)";
+      $("bidLine").textContent = "현재 최고가 " + fmt(round.currentBid.amount) + "원 (입찰자 있음)";
     } else {
-      $("bidLine").textContent = "아직 입찰이 없습니다. 시작가 " + fmt(round.startPrice);
+      $("bidLine").textContent = "아직 입찰이 없습니다. 시작가 " + fmt(round.startPrice) + "원";
     }
     const floor = round.currentBid ? round.currentBid.amount + 10000 : round.startPrice;
     const isMineWinning = round.currentBid && session && round.currentBid.bidderId === session.playerId;
+    const hasPassed = !!(session && (round.passedPlayerIds || []).includes(session.playerId));
+
+    $("passedNotice").classList.toggle("hidden", !hasPassed);
+    $("bidControls").classList.toggle("hidden", hasPassed);
+    if (hasPassed) return;
+
     const btns = $("bidBtns");
     btns.innerHTML = "";
     [
@@ -465,7 +481,10 @@
       btn.addEventListener("click", () => placeBid(b.amt));
       btns.appendChild(btn);
     });
+    $("manualBidInput").disabled = !!isMineWinning || busy;
     $("manualBidBtn").disabled = !!isMineWinning || busy;
+    // 최고 입찰자는 포기할 수 없음(서버도 거부하지만, 화면에서 먼저 비활성화해서 헛클릭을 줄임)
+    $("passBidBtn").disabled = !!isMineWinning || busy;
   }
 
   async function placeBid(amount) {
@@ -478,6 +497,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requestId: newReqId(), playerId: session.playerId, token: session.token, type: "bid", payload: { amount } }),
       });
+      $("manualBidInput").value = "";
       poll();
     } catch (e) {
       $("bidMsg").textContent = e.message;
@@ -487,13 +507,40 @@
     }
   }
 
-  $("manualBidBtn").addEventListener("click", () => {
-    const v = prompt("입찰 금액을 입력하세요 (숫자만):");
-    if (!v) return;
-    const amt = Number(v.replace(/[^0-9]/g, ""));
-    if (!amt) return;
+  async function passBid() {
+    if (busy) return;
+    if (!confirm("이번 품목 입찰을 포기할까요? 이번 품목에는 다시 입찰할 수 없어요.")) return;
+    busy = true;
+    $("bidMsg").classList.add("hidden");
+    try {
+      await api("/api/rooms/" + session.roomCode + "/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: newReqId(), playerId: session.playerId, token: session.token, type: "pass" }),
+      });
+      poll();
+    } catch (e) {
+      $("bidMsg").textContent = e.message;
+      $("bidMsg").classList.remove("hidden");
+    } finally {
+      busy = false;
+    }
+  }
+
+  function submitManualBid() {
+    const amt = Number($("manualBidInput").value);
+    if (!amt || amt <= 0) {
+      $("bidMsg").textContent = "입찰 금액을 입력해주세요.";
+      $("bidMsg").classList.remove("hidden");
+      return;
+    }
     placeBid(amt);
+  }
+  $("manualBidBtn").addEventListener("click", submitManualBid);
+  $("manualBidInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitManualBid();
   });
+  $("passBidBtn").addEventListener("click", passBid);
 
   function renderMyItems(me) {
     const el = $("myItems");
@@ -540,7 +587,7 @@
         card.className = "oppcard";
         card.innerHTML =
           '<div class="name">' + avatarHtml(p.characterId, 24) + "<span>" + p.name + (p.isBot ? " · BOT" : "") + "</span></div>" +
-          '<div class="cash">' + (sp ? fmt(sp.cash) + " 엽전" : "-") + "</div>" +
+          '<div class="cash">' + (sp ? fmt(sp.cash) + " 원" : "-") + "</div>" +
           '<div class="cnt">낙찰 ' + (sp ? (sp.wonItems || []).length : 0) + "개</div>";
         el.appendChild(card);
       });
