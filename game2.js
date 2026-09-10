@@ -84,6 +84,7 @@ function initState(players, ranks, part1Assets, now) {
     voteDeadlineAt: null,
     votes: {}, // voterKey -> playerId
     results: null, // 투표 마감 후 채워짐
+    passedThisRound: [], // 이번 품목에서 "포기"를 누른 사람 참가자 id 목록(품목마다 초기화)
     log: [],
   };
   startCurrentRound(state, now);
@@ -95,6 +96,27 @@ function startCurrentRound(state, now) {
   state.currentBid = null;
   state.itemDeadlineAt = now + BID_ROUND_MS;
   state.nextBotThinkAt = now + 3000 + crypto.randomInt(5000);
+  state.passedThisRound = [];
+}
+
+// 현재 최고 입찰자를 제외한 "사람" 참가자가 전원 포기했으면 5분을 다 기다리지 않고 바로
+// 낙찰/유찰 처리합니다(실제 경매장의 "더 없습니까? — 낙찰!"과 같은 효과). BOT은 포기 버튼이
+// 없고 언제든 무작위 타이밍에 입찰해올 수 있어 "결정 완료 대상"에서 일부러 제외했습니다 —
+// BOT은 경품 대상이 아닌 자리채움용이라, 사람 참가자들이 다 정리됐는데도 BOT의 무작위 입찰
+// 가능성 때문에 5분을 그대로 기다리게 하는 건 방송 진행상 손해가 더 크다고 판단했습니다.
+function maybeResolveEarly(state, now) {
+  if (state.phase !== "bidding") return false;
+  const leaderId = state.currentBid ? state.currentBid.bidderId : null;
+  const undecidedHumans = Object.values(state.players).filter(
+    (p) => !p.isBot && p.id !== leaderId && !state.passedThisRound.includes(p.id)
+  );
+  if (undecidedHumans.length > 0) return false;
+  // 사람이 아예 없는 방(전원 BOT)에서는 조기 낙찰 대상이 아님 — 포기를 누를 사람이 없으므로
+  // 이 조건은 사실상 항상 false지만, 안전하게 한 번 더 명시적으로 확인합니다.
+  const anyHuman = Object.values(state.players).some((p) => !p.isBot);
+  if (!anyHuman) return false;
+  resolveCurrentRound(state, now);
+  return true;
 }
 
 function currentItem(state) {
@@ -141,6 +163,9 @@ function placeBid(state, playerId, amount, now) {
   if (state.phase !== "bidding") throw new Error("지금은 입찰할 수 없습니다.");
   const p = state.players[playerId];
   if (!p) throw new Error("이 게임의 참가자가 아닙니다.");
+  if (state.passedThisRound.includes(playerId)) {
+    throw new Error("이번 품목은 이미 포기하셨습니다. 다음 품목부터 다시 참여할 수 있어요.");
+  }
   amount = Number(amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("입찰 금액이 올바르지 않습니다.");
 
@@ -156,6 +181,25 @@ function placeBid(state, playerId, amount, now) {
   }
   state.currentBid = { amount, bidderId: playerId };
   state.log.push(`${p.name}: 미공개 품목에 ${amount.toLocaleString()}원 입찰`);
+  maybeResolveEarly(state, now);
+}
+
+// 사람 참가자가 이번 품목 입찰을 포기합니다. 현재 최고 입찰자는 포기할 수 없습니다(이미 낙찰
+// 후보이므로 — 다른 사람이 더 높은 금액을 부르면 그때 다시 포기할 수 있습니다). 포기는 이번
+// 품목 동안 유지되며(새로고침해도 유지, 다음 품목부터는 다시 초기화), 포기 후에는 이번
+// 품목에 다시 입찰할 수 없습니다.
+function passBidding(state, playerId, now) {
+  if (state.phase !== "bidding") throw new Error("지금은 포기할 수 없습니다.");
+  const p = state.players[playerId];
+  if (!p) throw new Error("이 게임의 참가자가 아닙니다.");
+  if (state.currentBid && state.currentBid.bidderId === playerId) {
+    throw new Error("현재 최고 입찰자는 포기할 수 없습니다.");
+  }
+  if (!state.passedThisRound.includes(playerId)) {
+    state.passedThisRound.push(playerId);
+    state.log.push(`${p.name}: 이번 품목 입찰 포기`);
+  }
+  maybeResolveEarly(state, now);
 }
 
 // 봇은 정체를 모른 채 입찰합니다(사람과 동일 조건). 폴링 주기(1초)를 타고 tick()에서 호출되며,
@@ -306,6 +350,7 @@ function serializeForClient(state, opts) {
       startPrice: START_PRICE,
       deadlineAt: state.itemDeadlineAt,
       currentBid: state.currentBid,
+      passedPlayerIds: state.passedThisRound,
     };
   }
   if (state.phase === "voting") {
@@ -330,6 +375,7 @@ module.exports = {
   initState,
   tick,
   placeBid,
+  passBidding,
   startVoting,
   submitVote,
   closeVoting,
