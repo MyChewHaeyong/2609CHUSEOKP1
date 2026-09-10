@@ -1,5 +1,6 @@
 // 팔도마블 게임 로직 (순수 함수 모음) - server.js의 applyAction에서 사용
 "use strict";
+const DonationEffect = require("./donationEffect.js");
 
 const START_CASH = 300000;
 const GO_BONUS = 30000;
@@ -45,8 +46,26 @@ function assertCurrentTurn(state, playerId) {
   if (state.currentPlayerId !== playerId) throw new Error("지금은 당신의 차례가 아닙니다.");
 }
 
+// 후원 효과 가격 보정 — 참가자(스트리머)별로 완전히 독립된 후원 집계를 가집니다.
+// 적용 범위는 통행료 계산 한 곳뿐입니다(구매가·건설비·매각환급금·자산가치에는 영향 없음 —
+// 사용자 확정 사항). 통행료를 "내는 사람"(방문자) 본인의 누적 보정률만 적용하고, 주인은
+// 방문자가 실제로 낸 금액을 그대로 받습니다(중복 보정 방지). BOT은 채널이 없으므로 항상
+// 보정률 0(효과 없음)이고, 방 전체 스위치(donationEnabled)를 끄면 누적 기록은 그대로 둔 채
+// 가격에는 반영되지 않습니다.
+function donationRate(state, playerId) {
+  if (state.donationEnabled === false) return 0;
+  const p = state.players && state.players[playerId];
+  if (p && p.isBot) return 0;
+  const de = state.donationEffects && state.donationEffects[playerId];
+  return de ? de.cumulativeRate : 0;
+}
+
 // ---------------------------------------------------------------------------
-function initState(players) {
+// existingDonationEffects: 게임 시작 전(waiting) 상태에서 관리자가 이미 참가자별 후원을
+// 집계해뒀다면(수동 +1 버튼/SOOP 자동감지를 게임 시작 전부터 켜둔 경우) 그 값을 이어받기
+// 위한 선택 인자입니다({ [playerId]: donationEffect상태 } 형태). 넘기지 않으면 빈 맵으로 시작.
+// existingDonationEnabled: 방 전체 후원 효과 켜짐/꺼짐 스위치(기본 true).
+function initState(players, existingDonationEffects, existingDonationEnabled) {
   const st = {
     phase: "playing",
     turnOrder: players.map((p) => p.id),
@@ -60,6 +79,8 @@ function initState(players) {
     log: ["게임을 시작합니다."],
     players: {},
     properties: {},
+    donationEffects: existingDonationEffects || {},
+    donationEnabled: existingDonationEnabled !== false,
   };
   players.forEach((p) => {
     st.players[p.id] = {
@@ -89,13 +110,18 @@ function tollFor(state, pos, now) {
   else tier = 0.1;
   let amount = Math.round(tile.price * tier * mult);
   if (state.gameStartedAt && now - state.gameStartedAt > TOLL_DOUBLE_MS) amount *= 2;
+  // 후원 효과는 통행료에만 적용됩니다(사용자 확정 사항: "후원은 통행료만을 기준으로 함").
+  // 적용 기준은 "받는 사람(땅 주인)"의 누적 보정률입니다 — 내는 사람(방문자)이 아니라
+  // 주인 본인 채널의 후원이 자기 땅의 통행료 "수입"에 영향을 준다는 뜻입니다(긍정 보정률
+  // = 주인의 통행료 수입 증가, 부정 보정률 = 감소). 걷힌 금액을 그대로 주인이 받는
+  // 구조이므로 여기 한 번만 보정하면 양쪽 모두에 자연스럽게 반영됩니다.
+  amount = DonationEffect.applyIncomeRate(amount, donationRate(state, prop.ownerId));
   return amount;
 }
 
-function stepSellValue(tile, fromLevel) {
-  if (fromLevel === "hotel") return Math.round(tile.price * 0.25);
-  if (fromLevel === "villa") return Math.round(tile.price * 0.25);
-  return Math.round(tile.price * 0.5); // 땅 자체 매각
+function stepSellValue(state, tile, fromLevel) {
+  // 매각환급금은 후원 효과 적용 범위에서 제외됩니다(통행료만 적용 — 사용자 확정 사항).
+  return fromLevel === "hotel" || fromLevel === "villa" ? Math.round(tile.price * 0.25) : Math.round(tile.price * 0.5);
 }
 function sellOneStep(state, pos) {
   const tile = TILES[pos];
@@ -103,13 +129,13 @@ function sellOneStep(state, pos) {
   if (!prop || !prop.ownerId) return 0;
   if (prop.building === "hotel") {
     prop.building = "villa";
-    return stepSellValue(tile, "hotel");
+    return stepSellValue(state, tile, "hotel");
   }
   if (prop.building === "villa") {
     prop.building = "none";
-    return stepSellValue(tile, "villa");
+    return stepSellValue(state, tile, "villa");
   }
-  const refund = stepSellValue(tile, "none");
+  const refund = stepSellValue(state, tile, "none");
   delete state.properties[pos];
   return refund;
 }
@@ -155,6 +181,7 @@ function chargePlayer(state, playerId, amount, now) {
 // 자산 평가액(결산용): 땅은 구매가, 별장은 +구매가 50%, 호텔은 +구매가 100%(별장분 포함)로 계산.
 // 매각가(청산 시 50%씩 돌려받는 값)와는 다른, "규칙서 결산 코드" 절에서 말하는 순위용 평가액입니다.
 function assetValue(state, playerId) {
+  // 자산 평가액은 후원 효과 적용 범위에서 제외됩니다(통행료만 적용 — 사용자 확정 사항).
   let total = 0;
   Object.keys(state.properties).forEach((posStr) => {
     const pos = Number(posStr);
@@ -439,12 +466,13 @@ function maybeBotBuild(state, playerId) {
     if (prop.ownerId !== playerId) continue;
     const tile = TILES[pos];
     if (!ownsRegion(state, playerId, tile.region)) continue;
-    if (prop.building === "none" && p.cash - Math.round(tile.price * 0.5) >= 20000) {
-      p.cash -= Math.round(tile.price * 0.5);
+    const cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
+    if (prop.building === "none" && p.cash - cost >= 20000) {
+      p.cash -= cost;
       prop.building = "villa";
       state.log.push(`${p.name}(BOT): ${tile.name}에 별장 건설`);
-    } else if (prop.building === "villa" && p.cash - Math.round(tile.price * 0.5) >= 20000) {
-      p.cash -= Math.round(tile.price * 0.5);
+    } else if (prop.building === "villa" && p.cash - cost >= 20000) {
+      p.cash -= cost;
       prop.building = "hotel";
       state.log.push(`${p.name}(BOT): ${tile.name}에 호텔 건설`);
     }
@@ -472,10 +500,11 @@ function botTakeTurn(state, now) {
   if (p.bankrupt) return;
   if (state.turnPhase === "awaiting-buy") {
     const tile = TILES[p.position];
-    const afford = p.cash - tile.price;
-    if (tile.price <= p.cash && (afford >= 20000 || wouldCompleteRegion(state, pid, tile))) {
+    const price = tile.price; // 구매가는 후원 효과 적용 범위 밖(통행료만 적용)
+    const afford = p.cash - price;
+    if (price <= p.cash && (afford >= 20000 || wouldCompleteRegion(state, pid, tile))) {
       state.properties[tile.pos] = { ownerId: pid, building: "none" };
-      p.cash -= tile.price;
+      p.cash -= price;
       state.log.push(`${p.name}(BOT): ${tile.name} 구매`);
     }
     state.turnPhase = "awaiting-endturn";
@@ -517,8 +546,9 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       assertCurrentTurn(state, playerId);
       if (state.turnPhase !== "awaiting-buy") throw new Error("지금은 구매할 수 없습니다.");
       const tile = TILES[p.position];
-      if (p.cash < tile.price) throw new Error("자금이 부족합니다.");
-      p.cash -= tile.price;
+      const price = tile.price; // 구매가는 후원 효과 적용 범위 밖(통행료만 적용)
+      if (p.cash < price) throw new Error("자금이 부족합니다.");
+      p.cash -= price;
       state.properties[tile.pos] = { ownerId: playerId, building: "none" };
       state.log.push(`${p.name}: ${tile.name} 구매`);
       state.turnPhase = "awaiting-endturn";
@@ -554,10 +584,10 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       let cost;
       if (payload.level === "villa") {
         if (prop.building !== "none") throw new Error("이미 건물이 있습니다.");
-        cost = Math.round(tile.price * 0.5);
+        cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
       } else if (payload.level === "hotel") {
         if (prop.building !== "villa") throw new Error("먼저 별장을 지어야 합니다.");
-        cost = Math.round(tile.price * 0.5);
+        cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
       } else {
         throw new Error("알 수 없는 건물 종류입니다.");
       }
@@ -609,6 +639,30 @@ function applyPlayerAction(state, playerId, type, payload, now) {
   return state;
 }
 
+// 관리자 수동 "+1" 버튼 / SOOP 자동 감지가 호출하는 진입점. 게임이 아직 시작 전(waiting)
+// 이거나 이미 끝난 뒤(ended)라도 후원 카운트 자체는 계속 쌓일 수 있게 phase 체크는 하지
+// 않습니다(방송은 게임 진행과 무관하게 계속되므로). playerId로 어느 참가자(스트리머)의
+// 채널에 들어온 후원인지 지정합니다 — 참가자별로 완전히 독립된 카운트/누적 보정률을
+// 가지므로, 스트리머 B의 후원은 스트리머 B의 donationEffects[playerId]에만 쌓입니다.
+// donationEffect.js 자체는 state.donationEffect(단수) 필드를 다루도록 짜여 있으므로,
+// 여기서는 해당 플레이어의 상태를 담은 얇은 래퍼 객체를 만들어 넘기고 결과를 다시
+// state.donationEffects[playerId]에 저장합니다(모듈 수정 없이 그대로 재사용).
+function addDonation(state, playerId, count, now, source) {
+  // 게임 시작 전(waiting)에는 state가 { phase: "waiting" }뿐이라 log 배열이 아직 없을 수 있음
+  if (!Array.isArray(state.log)) state.log = [];
+  if (!state.donationEffects) state.donationEffects = {};
+  const wrapper = { donationEffect: state.donationEffects[playerId] || null };
+  const fired = DonationEffect.addDonations(wrapper, count, now, source);
+  state.donationEffects[playerId] = wrapper.donationEffect;
+  const pname = (state.players && state.players[playerId] && state.players[playerId].name) || playerId;
+  fired.forEach((f) => {
+    state.log.push(
+      `[후원 효과] ${pname} 누적 ${f.atCount}개 — ${f.deltaPct >= 0 ? "+" : ""}${f.deltaPct.toFixed(1)}% (누적 보정률 ${(f.after * 100).toFixed(1)}%)`
+    );
+  });
+  return fired;
+}
+
 module.exports = {
   TILES,
   TOLL_MULT,
@@ -623,4 +677,6 @@ module.exports = {
   computeFinalRanking,
   netWorth,
   assetValue,
+  addDonation,
+  donationRate,
 };
