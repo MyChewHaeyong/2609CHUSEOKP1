@@ -264,6 +264,19 @@ function tick(state, now) {
 // 투표 중 득표수는 forAdmin일 때만 포함합니다(밴드왜건 방지, 마감 후에는 전원 공개).
 function serializeForClient(state, opts) {
   opts = opts || {};
+  // 방을 막 만들었지만 아직 "경매 시작"을 누르기 전에는 state가 { phase: "waiting" }뿐이라
+  // state.players가 없습니다. 이 상태로 폴링이 들어와도 죽지 않도록 안전한 기본값을 돌려줍니다.
+  if (!state.players) {
+    return {
+      phase: state.phase || "waiting",
+      publicItemList: ITEMS,
+      itemResults: [],
+      remainingCount: ITEMS.length,
+      totalItems: ITEMS.length,
+      players: {},
+      log: [],
+    };
+  }
   const players = {};
   Object.values(state.players).forEach((p) => {
     players[p.id] = {
