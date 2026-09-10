@@ -71,6 +71,14 @@
       <div class="bidline" id="bidLine"></div>
     </div>
 
+    <div id="resultCard" class="roundcard" style="display:none">
+      <div id="resultThumb" class="sangcell" style="width:100px; height:100px; margin:0 auto 10px"></div>
+      <div class="rtitle" id="resultTitle">공개!</div>
+      <div style="font-size:22px; font-weight:700; margin:10px 0 4px" id="resultWinnerLine"></div>
+      <div class="bidline" id="resultPriceLine"></div>
+      <div style="font-size:12.5px; color:#9d97c2; margin-top:12px">진행자가 다음 품목을 곧 엽니다</div>
+    </div>
+
     <div id="voteCard" class="votecard" style="display:none">
       <h2 style="color:var(--gold); margin:0 0 6px; font-size:16px">시청자 투표 진행 중</h2>
       <div class="timer" id="voteTimer">--:--</div>
@@ -198,7 +206,7 @@
       const st = data.state || {};
 
       const phaseLabel = {
-        bidding: "경매 진행 중", "table-review": "경매 종료 · 곧 투표 시작", voting: "시청자 투표 진행 중", ended: "최종 결과",
+        bidding: "경매 진행 중", "round-result": "품목 결과 공개", "table-review": "경매 종료 · 곧 투표 시작", voting: "시청자 투표 진행 중", ended: "최종 결과",
       };
       document.getElementById("phaseLine").textContent =
         data.status === "waiting" ? "참가자를 기다리는 중" : (phaseLabel[st.phase] || "");
@@ -206,6 +214,7 @@
       document.getElementById("waitLine").style.display = data.status === "waiting" ? "block" : "none";
       document.getElementById("tableSection").style.display = data.status === "waiting" || st.phase === "ended" ? "none" : "block";
       document.getElementById("roundCard").style.display = st.phase === "bidding" ? "block" : "none";
+      document.getElementById("resultCard").style.display = st.phase === "round-result" ? "block" : "none";
       document.getElementById("voteCard").style.display = st.phase === "voting" ? "block" : "none";
       document.getElementById("rankSection").style.display = st.phase === "ended" ? "block" : "none";
 
@@ -216,6 +225,21 @@
         document.getElementById("bidLine").innerHTML = round.currentBid
           ? "현재 최고가 <b>" + fmt(round.currentBid.amount) + "</b>"
           : "아직 입찰이 없습니다 · 시작가 " + fmt(round.startPrice);
+      }
+      if (st.phase === "round-result" && st.lastResult) {
+        const r = st.lastResult;
+        const statePlayers = st.players || {};
+        document.getElementById("resultThumb").innerHTML =
+          '<img src="/banquet/' + r.slug + '.png" alt="" onerror="this.classList.add(\'err\')" />';
+        document.getElementById("resultTitle").textContent = "공개! " + r.name;
+        if (r.winnerId) {
+          const w = statePlayers[r.winnerId];
+          document.getElementById("resultWinnerLine").textContent = (w ? w.name : "?") + " 낙찰";
+          document.getElementById("resultPriceLine").innerHTML = "<b>" + fmt(r.finalPrice) + "</b>원";
+        } else {
+          document.getElementById("resultWinnerLine").textContent = "유찰 (입찰 없음)";
+          document.getElementById("resultPriceLine").textContent = "";
+        }
       }
       if (st.phase === "voting") {
         renderCountdown("voteTimer", st.voteDeadlineAt, data.serverTime);
