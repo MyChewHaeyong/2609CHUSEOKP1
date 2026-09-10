@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>만찬경매 - 시청자 투표</title>
+<style>
+  :root{ --bg:#1E1B3A; --panel:#262048; --gold:#D9A441; --cream:#F4E9D8; --line:#3A3466; --ok:#4E9F63; --red:#E5867A; }
+  *{box-sizing:border-box}
+  body{margin:0; min-height:100vh; background:var(--bg); color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif;}
+  .wrap{max-width:1100px; margin:0 auto; padding:24px 14px 60px}
+  h1{color:var(--gold); font-size:24px; margin:0 0 4px; text-align:center}
+  .code{text-align:center; font-size:13px; color:#cfcbea; margin-bottom:14px; letter-spacing:.04em}
+  .banner{max-width:520px; margin:0 auto 22px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; text-align:center}
+  .banner.voting{border-color:var(--gold)}
+  .banner .timer{font-family:monospace; font-size:32px; margin:8px 0; color:var(--gold)}
+  .banner .timer.hot{color:var(--red)}
+  .banner p{margin:4px 0; font-size:13.5px; color:#cfcbea}
+  .hidden{display:none}
+
+  .avatar{position:relative; border-radius:50%; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; background:#160f2e}
+  .avatar img{display:block; width:100%; height:100%; object-fit:cover}
+  .avatar .avatar-fallback{display:none; line-height:1}
+  .name-avatar{display:inline-flex; align-items:center; gap:8px}
+
+  .candgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px}
+  .candcard{background:var(--panel); border:2px solid var(--line); border-radius:16px; padding:14px; text-align:center}
+  .candcard.chosen{border-color:var(--gold); box-shadow:0 0 0 1px var(--gold)}
+  .candcard .name{font-size:16.5px; font-weight:700; margin:6px 0 2px}
+  .candcard .cnt{font-size:12px; color:#9d97c2; margin-bottom:10px}
+
+  .sang{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; min-height:60px; margin-bottom:12px}
+  .sangcell{aspect-ratio:1/1; border-radius:8px; background:#100e24; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative}
+  .sangcell img{width:100%; height:100%; object-fit:cover; display:block}
+  .sangcell img.err{display:none}
+  .sangcell .lbl{position:absolute; bottom:0; left:0; right:0; font-size:9px; text-align:center; background:rgba(0,0,0,.55); padding:2px 1px; line-height:1.2}
+  .sang.empty-hint{align-items:center; justify-content:center; grid-column:1/-1; color:#6a6390; font-size:11.5px}
+
+  button{width:100%; padding:11px; border-radius:8px; border:none; background:var(--gold); color:#1E1B3A; font-weight:700; font-size:14px; cursor:pointer}
+  button:disabled{opacity:.4; cursor:default}
+  button.voted{background:var(--ok); color:#fff}
+
+  .rankgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin-top:10px}
+  .rankcard{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:14px; text-align:center}
+  .rankcard.r1{border-color:var(--gold); box-shadow:0 0 0 1px var(--gold)}
+  .rankcard .rankbadge{font-size:13px; color:var(--gold); font-weight:700; margin-bottom:6px}
+  .rankcard .rvotes{font-size:12px; color:#cfcbea; margin-bottom:10px}
+
+  .msgline{text-align:center; font-size:12.5px; color:#9d97c2; margin-top:10px}
+  .errline{text-align:center; font-size:12.5px; color:var(--red); margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>만찬경매 · 시청자 투표</h1>
+  <div class="code" id="codeLine">방 코드 -</div>
+
+  <div id="notReadyBanner" class="banner hidden">
+    <p id="notReadyMsg">경매가 진행 중입니다. 차례상이 모두 완성되면 투표가 열립니다.</p>
+  </div>
+
+  <div id="votingBanner" class="banner voting hidden">
+    <h2 style="margin:0; color:var(--gold); font-size:16px">투표 진행 중</h2>
+    <div class="timer" id="voteTimer">--:--</div>
+    <p>마음에 드는 차례상에 투표해주세요 (1인 1표)</p>
+  </div>
+
+  <div id="votedNotice" class="banner hidden" style="border-color:var(--ok)">
+    <p style="color:var(--cream); font-size:15px; font-weight:700">투표해주셔서 감사합니다!</p>
+    <p>결과는 투표 마감 후 이 페이지에서 바로 확인할 수 있어요.</p>
+  </div>
+
+  <div id="candSection" class="hidden">
+    <div class="candgrid" id="candGrid"></div>
+    <div id="voteErr" class="errline hidden"></div>
+  </div>
+
+  <div id="rankSection" class="hidden" style="margin-top:8px">
+    <h2 style="text-align:center; color:var(--gold); font-size:20px">최종 결과</h2>
+    <div class="rankgrid" id="rankGrid"></div>
+    <div class="msgline">경품은 사람 참가자에게만 지급됩니다</div>
+  </div>
+</div>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const roomCode = (params.get("room") || "").toUpperCase();
+  document.getElementById("codeLine").textContent = roomCode ? "방 코드 " + roomCode : "URL에 ?room=방코드 를 붙여주세요";
+
+  const CHARACTERS = [
+    { id: 1, name: "호랑이", emoji: "🐯", color: "#D9A441" },
+    { id: 2, name: "토끼", emoji: "🐰", color: "#4E9F63" },
+    { id: 3, name: "두루미", emoji: "🕊️", color: "#5B8DEF" },
+    { id: 4, name: "여우", emoji: "🦊", color: "#C9598F" },
+  ];
+  function characterById(id) {
+    return CHARACTERS.find((c) => c.id === Number(id)) || null;
+  }
+  function avatarHtml(charId, sizePx) {
+    const c = characterById(charId);
+    if (!c) return '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px"></div>';
+    const fs = Math.round(sizePx * 0.55);
+    return (
+      '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px;border-color:' + c.color + '">' +
+      '<img src="/characters/char' + c.id + '.png" alt="' + c.name + '" ' +
+      'onerror="this.style.display=\'none\'; if (this.nextElementSibling) this.nextElementSibling.style.display=\'flex\'" />' +
+      '<span class="avatar-fallback" style="font-size:' + fs + 'px">' + c.emoji + "</span>" +
+      "</div>"
+    );
+  }
+  function sangCell(it) {
+    return (
+      '<div class="sangcell"><img src="/banquet/' + it.slug + '.png" alt="" ' +
+      'onerror="this.classList.add(\'err\')" /><div class="lbl">' + it.name + "</div></div>"
+    );
+  }
+
+  // 브라우저에 한 번 저장해두는 투표자 토큰. 서버는 이 값 + 접속 IP를 함께 묶어 중복 투표를
+  // 막습니다(로그인 없는 공개 투표라 완벽하진 않지만, 방송 투표용으로는 충분한 수준입니다).
+  function getVoterToken() {
+    let t = localStorage.getItem("banquet_voter_token");
+    if (!t) {
+      t = crypto.randomUUID ? crypto.randomUUID() : "v-" + Date.now() + "-" + Math.random();
+      localStorage.setItem("banquet_voter_token", t);
+    }
+    return t;
+  }
+  function votedKey() { return "banquet_voted_" + roomCode; }
+  function getVotedFor() { return localStorage.getItem(votedKey()); }
+  function setVotedFor(id) { localStorage.setItem(votedKey(), id || "yes"); }
+
+  const fmt = (n) => (n || 0).toLocaleString("ko-KR");
+  let busy = false;
+
+  function renderCountdown(elId, deadlineAt, serverTime) {
+    const el = document.getElementById(elId);
+    if (!deadlineAt) { el.textContent = "--:--"; return; }
+    const remainMs = Math.max(0, deadlineAt - serverTime);
+    const s = Math.ceil(remainMs / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    el.textContent = mm + ":" + ss;
+    el.classList.toggle("hot", s <= 15);
+  }
+
+  function renderCandidates(players, statePlayers) {
+    const grid = document.getElementById("candGrid");
+    const votedFor = getVotedFor();
+    grid.innerHTML = "";
+    players.forEach((p) => {
+      const sp = statePlayers[p.id] || {};
+      const items = sp.wonItems || [];
+      const isChosen = votedFor === p.id;
+      const card = document.createElement("div");
+      card.className = "candcard" + (isChosen ? " chosen" : "");
+      const btnLabel = votedFor ? (isChosen ? "✓ 투표함" : "투표 완료") : "이 상에 투표하기";
+      card.innerHTML =
+        '<div class="name-avatar" style="justify-content:center">' + avatarHtml(p.characterId, 34) +
+        '<span class="name">' + p.name + (p.isBot ? " · BOT" : "") + "</span></div>" +
+        '<div class="cnt">낙찰 품목 ' + items.length + "개</div>" +
+        '<div class="sang">' +
+        (items.length ? items.map(sangCell).join("") : '<div class="empty-hint">아직 낙찰받은 품목 없음</div>') +
+        "</div>" +
+        '<button class="voteBtn' + (isChosen ? " voted" : "") + '" data-id="' + p.id + '" ' +
+        (votedFor || busy ? "disabled" : "") + ">" + btnLabel + "</button>";
+      grid.appendChild(card);
+    });
+    grid.querySelectorAll(".voteBtn").forEach((btn) => {
+      btn.addEventListener("click", () => submitVote(btn.getAttribute("data-id")));
+    });
+  }
+
+  async function submitVote(targetPlayerId) {
+    if (busy || getVotedFor()) return;
+    busy = true;
+    document.getElementById("voteErr").classList.add("hidden");
+    try {
+      const res = await fetch("/api/rooms/" + roomCode + "/vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voterToken: getVoterToken(), targetPlayerId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        if (data.error && data.error.includes("이미 투표")) setVotedFor(targetPlayerId);
+        throw new Error(data.error || "투표 실패");
+      }
+      setVotedFor(targetPlayerId);
+    } catch (e) {
+      const err = document.getElementById("voteErr");
+      err.textContent = e.message;
+      err.classList.remove("hidden");
+    } finally {
+      busy = false;
+      poll();
+    }
+  }
+
+  function renderResults(results, players) {
+    const nameOf = (id) => { const p = players.find((x) => x.id === id); return p || { name: id }; };
+    const grid = document.getElementById("rankGrid");
+    grid.innerHTML = "";
+    results.displayRanking.forEach((r) => {
+      const p = nameOf(r.playerId);
+      const card = document.createElement("div");
+      card.className = "rankcard" + (r.rank === 1 ? " r1" : "");
+      card.innerHTML =
+        '<div class="rankbadge">' + r.rank + "위" + (r.rank === 1 ? " 🏆" : "") + "</div>" +
+        '<div class="name-avatar" style="justify-content:center; margin-bottom:6px">' + avatarHtml(p.characterId, 34) +
+        "<span>" + p.name + "</span></div>" +
+        '<div class="rvotes">득표 ' + r.votes + "표</div>";
+      grid.appendChild(card);
+    });
+  }
+
+  async function poll() {
+    if (!roomCode) return;
+    try {
+      const res = await fetch("/api/rooms/" + roomCode + "/state");
+      const data = await res.json();
+      if (!data.ok) return;
+      const players = data.players || [];
+      const st = data.state || {};
+
+      document.getElementById("notReadyBanner").classList.toggle("hidden", !(data.status === "waiting" || st.phase === "bidding" || st.phase === "table-review"));
+      if (st.phase === "table-review") document.getElementById("notReadyMsg").textContent = "경매가 끝났습니다. 곧 투표가 열립니다. 잠시만 기다려주세요.";
+
+      const votedFor = getVotedFor();
+      document.getElementById("votingBanner").classList.toggle("hidden", st.phase !== "voting");
+      document.getElementById("candSection").classList.toggle("hidden", st.phase !== "voting");
+      document.getElementById("votedNotice").classList.toggle("hidden", !(st.phase === "voting" && votedFor));
+      document.getElementById("rankSection").classList.toggle("hidden", st.phase !== "ended");
+
+      if (st.phase === "voting") {
+        renderCountdown("voteTimer", st.voteDeadlineAt, data.serverTime);
+        renderCandidates(players, st.players || {});
+      }
+      if (st.phase === "ended" && st.results) {
+        renderResults(st.results, players);
+      }
+    } catch (e) {
+      /* 투표 화면도 조용히 재시도만 함 */
+    }
+  }
+
+  poll();
+  setInterval(poll, 1000);
+</script>
+</body>
+</html>

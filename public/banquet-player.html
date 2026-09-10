@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>만찬경매 - 참가자</title>
+<style>
+  :root{ --bg:#1E1B3A; --panel:#262048; --gold:#D9A441; --red:#C0392B; --cream:#F4E9D8; --line:#3A3466; --ok:#4E9F63; }
+  *{box-sizing:border-box}
+  body{margin:0; min-height:100vh; background:var(--bg); color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif;}
+  .wrap{max-width:1000px; margin:0 auto; padding:24px 14px 60px}
+  h1{color:var(--gold); font-size:22px; margin:0 0 4px}
+  h2{color:var(--gold); font-size:14.5px; margin:0 0 10px; letter-spacing:.02em}
+  p.sub{color:#cfcbea; font-size:13px; margin:0 0 22px}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px; max-width:560px; margin-left:auto; margin-right:auto}
+  .panel-wide{max-width:none}
+  label{display:block; font-size:13px; color:#cfcbea; margin-bottom:6px}
+  input[type=text]{width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#1a1733; color:var(--cream); font-size:15px; margin-bottom:12px}
+  select{width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#1a1733; color:var(--cream); font-size:15px; margin-bottom:12px}
+  button{width:100%; padding:11px; border-radius:8px; border:none; background:var(--gold); color:#1E1B3A; font-weight:700; font-size:14.5px; cursor:pointer; margin-bottom:8px}
+  button.secondary{background:transparent; border:1px solid var(--gold); color:var(--gold)}
+  button.danger{background:var(--red); color:#fff}
+  button:disabled{opacity:.45; cursor:default}
+  .btnrow{display:flex; gap:8px}
+  .btnrow button{margin-bottom:0}
+  .room-code{font-size:26px; font-weight:700; letter-spacing:.08em; color:var(--gold); text-align:center; margin:2px 0 2px}
+  .row{display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px}
+  .row:last-child{border-bottom:none}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:8px; background:#666}
+  .dot.on{background:var(--ok)}
+  .status-line{font-size:12.5px; color:#9d97c2; text-align:center; margin-top:8px}
+  .err{color:#ff9a8c; font-size:13px; margin-top:8px}
+  .hidden{display:none}
+
+  .avatar{position:relative; border-radius:50%; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; background:#1a1733}
+  .avatar img{display:block; width:100%; height:100%; object-fit:cover}
+  .avatar .avatar-fallback{display:none; line-height:1}
+  .char-picker{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:6px}
+  .char-option{background:#1a1733; border:2px solid var(--line); border-radius:10px; padding:8px 4px 6px; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; text-align:center}
+  .char-option .avatar{width:40px; height:40px; font-size:20px}
+  .char-option .cname{font-size:11px; color:#cfcbea}
+  .char-option.selected{border-color:var(--gold); background:color-mix(in srgb, var(--gold) 14%, #1a1733)}
+  .char-option.selected .cname{color:var(--gold); font-weight:700}
+  .char-option.taken{opacity:.35; cursor:not-allowed}
+  .char-hint{font-size:11.5px; color:#9d97c2; margin:-2px 0 12px}
+  .name-avatar{display:inline-flex; align-items:center; gap:6px}
+  .name-avatar .avatar{width:22px; height:22px; font-size:12px}
+
+  .roundcard{background:#1a1733; border:1px solid var(--gold); border-radius:12px; padding:16px; text-align:center; margin-bottom:12px}
+  .mystery{font-size:44px; line-height:1}
+  .roundcard .rtitle{font-size:14.5px; color:var(--gold); font-weight:700; margin-top:6px}
+  .roundcard .timer{font-family:monospace; font-size:26px; margin:8px 0; color:var(--cream)}
+  .roundcard .timer.hot{color:#ff9a8c}
+  .roundcard .bidline{font-size:13.5px; color:#cfcbea; margin-bottom:10px}
+  .bidbtns{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:8px}
+  .bidbtns button{margin-bottom:0; font-size:12.5px; padding:9px 2px}
+
+  .itemgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:8px}
+  .itemcell{background:#1a1733; border:1px solid var(--line); border-radius:8px; padding:8px 4px; text-align:center; font-size:11px; color:#9d97c2}
+  .itemcell.won{border-color:var(--gold); color:var(--cream)}
+  .itemcell .thumb{width:100%; aspect-ratio:1/1; border-radius:6px; background:#100e24; display:flex; align-items:center; justify-content:center; font-size:22px; overflow:hidden; margin-bottom:4px}
+  .itemcell .thumb img{width:100%; height:100%; object-fit:cover; display:block}
+  .itemcell .thumb img.err{display:none}
+
+  .stat{background:#1a1733; border:1px solid var(--line); border-radius:8px; padding:9px 11px; margin-bottom:8px}
+  .stat .lbl{font-size:11px; color:#9d97c2}
+  .stat .val{font-size:16px; font-weight:700; color:var(--cream); margin-top:2px}
+
+  .oppgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px}
+  .oppcard{background:#1a1733; border:1px solid var(--line); border-radius:10px; padding:10px}
+  .oppcard .name{font-size:13.5px; font-weight:700; display:flex; align-items:center; gap:6px}
+  .oppcard .cash{font-size:12px; color:var(--gold); margin-top:4px}
+  .oppcard .cnt{font-size:11.5px; color:#9d97c2; margin-top:2px}
+
+  .ranktable{width:100%; border-collapse:collapse; font-size:13.5px}
+  .ranktable th, .ranktable td{padding:8px 6px; text-align:left; border-bottom:1px solid var(--line)}
+  .ranktable th{color:#9d97c2; font-weight:600; font-size:11.5px}
+  .ranktable td.num{text-align:right; font-variant-numeric:tabular-nums}
+  .loglist{max-height:140px; overflow-y:auto; font-size:12px; color:#9d97c2; line-height:1.8}
+  .adminbox{background:#1a1733; border:1px solid var(--gold); border-radius:8px; padding:10px 12px; margin:10px 0; font-size:12.5px; color:#cfcbea}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>만찬경매</h1>
+  <p class="sub">한가위 팔도 유람마블 · 2부 참가자 화면</p>
+
+  <div id="joinPanel" class="panel">
+    <label for="nameInput">이름</label>
+    <input id="nameInput" type="text" maxlength="20" placeholder="예: 큰형님" />
+    <label for="codeInput">방 코드 (새로 만들 땐 비워두세요)</label>
+    <input id="codeInput" type="text" maxlength="6" placeholder="예: A7K2" style="text-transform:uppercase" />
+    <label>캐릭터 선택</label>
+    <div id="charPicker" class="char-picker"></div>
+    <div class="char-hint">이미 다른 참가자가 고른 캐릭터는 선택할 수 없어요. BOT은 남은 캐릭터 중 무작위로 배정됩니다.</div>
+    <button id="joinBtn">입장하기</button>
+    <button id="createBtn" class="secondary" style="margin-top:8px">새 방 만들기</button>
+    <div id="joinErr" class="err hidden"></div>
+  </div>
+
+  <div id="gamePanel" class="hidden">
+
+    <div class="panel">
+      <div class="room-code" id="roomCodeDisplay">----</div>
+      <div id="adminKeyBox" class="adminbox hidden">
+        이 방을 만드신 분만 보면 됩니다 — 관리자 화면(admin.html)에 입력할 관리자 키입니다.<br/>
+        <span id="adminKeyText" style="color:var(--gold); font-weight:700; letter-spacing:.03em; word-break:break-all"></span>
+      </div>
+      <div class="status-line" id="phaseLine">대기 중</div>
+      <div id="playerList" style="margin-top:12px"></div>
+    </div>
+
+    <!-- 대기 중 + 방장(관리자키 보유자)에게만 보이는 경매 시작 컨트롤 -->
+    <div id="startPanel" class="panel hidden">
+      <h2>경매 시작</h2>
+      <label for="totalPlayersSelect">전체 인원 수 (남은 자리는 BOT이 채웁니다)</label>
+      <select id="totalPlayersSelect">
+        <option value="1">1명</option>
+        <option value="2">2명</option>
+        <option value="3">3명</option>
+        <option value="4" selected>4명</option>
+      </select>
+      <div id="botNamesArea"></div>
+
+      <label for="part1CodeInput" style="margin-top:6px">1부 방 코드로 등수 자동 연결 (선택)</label>
+      <input id="part1CodeInput" type="text" maxlength="6" placeholder="예: B3Q9" style="text-transform:uppercase" />
+      <button id="previewBtn" class="secondary" type="button">미리보기</button>
+      <div id="previewMsg" class="status-line"></div>
+
+      <button id="startAuctionBtn" style="margin-top:10px">경매 시작</button>
+      <div id="startMsg" class="err hidden"></div>
+    </div>
+
+    <!-- 진행 중 화면 -->
+    <div id="gameBoard" class="hidden">
+
+      <div id="biddingArea" class="hidden">
+        <div class="roundcard">
+          <div class="mystery">❓</div>
+          <div class="rtitle" id="roundTitle">미공개 품목 - / 14</div>
+          <div class="timer" id="roundTimer">--:--</div>
+          <div class="bidline" id="bidLine">아직 입찰이 없습니다. 시작가 -</div>
+          <div class="bidbtns" id="bidBtns"></div>
+          <button id="manualBidBtn" class="secondary" type="button">직접 금액 입력해서 입찰</button>
+        </div>
+        <div id="bidMsg" class="err hidden"></div>
+      </div>
+
+      <div id="tableReviewBanner" class="panel hidden" style="text-align:center">
+        <h2 style="margin-bottom:4px">경매 종료!</h2>
+        <p class="sub" style="margin:0">완성된 차례상으로 곧 시청자 투표가 시작됩니다. 잠시만 기다려주세요.</p>
+        <div id="startVoteBox" class="hidden" style="margin-top:10px">
+          <button id="startVoteBtn">투표 열기</button>
+        </div>
+      </div>
+
+      <div id="votingBanner" class="panel hidden" style="text-align:center">
+        <h2 style="margin-bottom:4px">시청자 투표 진행 중</h2>
+        <div class="timer" id="voteTimer">--:--</div>
+        <p class="sub" style="margin:6px 0 0">완성된 차례상에 시청자들이 투표하고 있습니다.</p>
+        <div id="closeVoteBox" class="hidden" style="margin-top:10px">
+          <button id="closeVoteBtn" class="danger">지금 바로 투표 마감</button>
+        </div>
+      </div>
+
+      <div id="rankPanel" class="panel hidden">
+        <h2>최종 결과</h2>
+        <table class="ranktable">
+          <thead><tr><th>순위</th><th>이름</th><th class="num">득표</th></tr></thead>
+          <tbody id="rankBody"></tbody>
+        </table>
+        <p class="sub" style="margin:10px 0 0">경품은 사람 참가자에게만 지급됩니다.</p>
+      </div>
+
+      <div class="panel">
+        <div class="stat"><div class="lbl">내 자금</div><div class="val" id="myCash">-</div></div>
+      </div>
+
+      <div class="panel panel-wide">
+        <h2>내 차례상</h2>
+        <div class="itemgrid" id="myItems"></div>
+      </div>
+
+      <div class="panel panel-wide">
+        <h2>품목 목록 (14개 · 낙찰 전까지 정체 비공개)</h2>
+        <div class="itemgrid" id="itemLegend"></div>
+      </div>
+
+      <div class="panel panel-wide">
+        <h2>다른 참가자</h2>
+        <div class="oppgrid" id="oppGrid"></div>
+      </div>
+
+      <div class="panel panel-wide">
+        <h2>진행 기록</h2>
+        <div class="loglist" id="logList"></div>
+      </div>
+    </div>
+
+    <div class="status-line" id="pollLine"></div>
+    <button id="leaveBtn" class="secondary" style="margin-top:14px; border-color:var(--red); color:#ff9a8c">이 방 나가기 / 다른 방 만들기</button>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let session = null; // { roomCode, playerId, token }
+  let pollTimer = null;
+  let myAdminKey = null;
+  let busy = false;
+
+  const CHARACTERS = [
+    { id: 1, name: "호랑이", emoji: "🐯", color: "#D9A441" },
+    { id: 2, name: "토끼", emoji: "🐰", color: "#4E9F63" },
+    { id: 3, name: "두루미", emoji: "🕊️", color: "#5B8DEF" },
+    { id: 4, name: "여우", emoji: "🦊", color: "#C9598F" },
+  ];
+  function characterById(id) {
+    return CHARACTERS.find((c) => c.id === Number(id)) || null;
+  }
+  function avatarHtml(charId, sizePx) {
+    const c = characterById(charId);
+    if (!c) return '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px"></div>';
+    const fs = Math.round(sizePx * 0.55);
+    return (
+      '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px;border-color:' + c.color + '">' +
+      '<img src="/characters/char' + c.id + '.png" alt="' + c.name + '" ' +
+      'onerror="this.style.display=\'none\'; if (this.nextElementSibling) this.nextElementSibling.style.display=\'flex\'" />' +
+      '<span class="avatar-fallback" style="font-size:' + fs + 'px">' + c.emoji + "</span>" +
+      "</div>"
+    );
+  }
+  // 품목 이미지 — public/banquet/<slug>.png 를 올리면 자동으로 그 이미지를 쓰고,
+  // 없으면(지금 상태) 이름표만 있는 기본 카드로 대체됩니다.
+  function itemThumb(slug, emoji) {
+    return (
+      '<div class="thumb"><img src="/banquet/' + slug + '.png" alt="" ' +
+      'onerror="this.classList.add(\'err\')" />' +
+      (emoji ? '<span style="position:relative">' + emoji + "</span>" : "") +
+      "</div>"
+    );
+  }
+  const fmt = (n) => (n || 0).toLocaleString("ko-KR");
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem("banquet_session");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+  function saveSession(s) {
+    session = s;
+    localStorage.setItem("banquet_session", JSON.stringify(s));
+  }
+
+  async function api(path, opts) {
+    const res = await fetch(path, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) throw new Error(data.error || ("요청 실패 (" + res.status + ")"));
+    return data;
+  }
+  function newReqId() {
+    return (crypto.randomUUID ? crypto.randomUUID() : "r-" + Date.now() + "-" + Math.random());
+  }
+
+  let selectedCharacterId = null;
+  let takenCharacterIds = [];
+
+  function renderCharPicker() {
+    const wrap = $("charPicker");
+    wrap.innerHTML = "";
+    CHARACTERS.forEach((c) => {
+      const taken = takenCharacterIds.includes(c.id);
+      const opt = document.createElement("div");
+      opt.className = "char-option" + (selectedCharacterId === c.id ? " selected" : "") + (taken ? " taken" : "");
+      opt.innerHTML = avatarHtml(c.id, 40) + '<div class="cname">' + c.name + "</div>";
+      if (!taken) {
+        opt.addEventListener("click", () => {
+          selectedCharacterId = c.id;
+          renderCharPicker();
+        });
+      }
+      wrap.appendChild(opt);
+    });
+  }
+
+  async function refreshTakenCharacters(code) {
+    if (!code || code.length < 4) return;
+    try {
+      const res = await fetch("/api/rooms/" + code + "/state");
+      const data = await res.json();
+      if (!data.ok) return;
+      takenCharacterIds = (data.players || []).map((p) => p.characterId).filter((id) => id != null);
+      if (selectedCharacterId && takenCharacterIds.includes(selectedCharacterId)) selectedCharacterId = null;
+      renderCharPicker();
+    } catch (e) {}
+  }
+
+  async function createRoom() {
+    const data = await api("/api/rooms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameMode: "auction" }),
+    });
+    $("codeInput").value = data.roomCode;
+    localStorage.setItem("banquet_adminkey_" + data.roomCode, data.adminKey);
+    takenCharacterIds = [];
+    renderCharPicker();
+    await doJoin(data.roomCode);
+  }
+
+  async function doJoin(codeOverride) {
+    const name = $("nameInput").value.trim();
+    const code = (codeOverride || $("codeInput").value.trim()).toUpperCase();
+    if (!name) return showJoinErr("이름을 입력해주세요.");
+    if (!code) return showJoinErr("방 코드를 입력하거나 새 방을 만들어주세요.");
+    if (!selectedCharacterId) return showJoinErr("캐릭터를 선택해주세요.");
+    try {
+      const data = await api("/api/rooms/" + code + "/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, characterId: selectedCharacterId }),
+      });
+      saveSession({ roomCode: code, playerId: data.playerId, token: data.token });
+      $("joinErr").classList.add("hidden");
+      enterGame();
+    } catch (e) {
+      showJoinErr(e.message);
+    }
+  }
+  function showJoinErr(msg) {
+    $("joinErr").textContent = msg;
+    $("joinErr").classList.remove("hidden");
+  }
+
+  function enterGame() {
+    $("joinPanel").classList.add("hidden");
+    $("gamePanel").classList.remove("hidden");
+    $("roomCodeDisplay").textContent = session.roomCode;
+    myAdminKey = localStorage.getItem("banquet_adminkey_" + session.roomCode) || null;
+    if (myAdminKey) {
+      $("adminKeyBox").classList.remove("hidden");
+      $("adminKeyText").textContent = myAdminKey;
+    }
+    clearInterval(pollTimer);
+    poll();
+    pollTimer = setInterval(poll, 1000);
+  }
+
+  let botNameDrafts = [];
+  let renderedBotsNeeded = -1;
+  function renderBotNameInputs(humanCount) {
+    const total = Number($("totalPlayersSelect").value);
+    const botsNeeded = Math.max(0, total - humanCount);
+    if (botsNeeded === renderedBotsNeeded) return;
+    renderedBotsNeeded = botsNeeded;
+    const area = $("botNamesArea");
+    area.innerHTML = "";
+    if (botsNeeded === 0) return;
+    const label = document.createElement("label");
+    label.textContent = "BOT 이름 (비워두면 기본 이름 사용)";
+    area.appendChild(label);
+    for (let i = 0; i < botsNeeded; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.maxLength = 20;
+      input.placeholder = "BOT " + (i + 1) + " 이름 (선택)";
+      input.value = botNameDrafts[i] || "";
+      input.addEventListener("input", () => { botNameDrafts[i] = input.value; });
+      area.appendChild(input);
+    }
+  }
+
+  let lastRoomStatus = null;
+  let lastPhase = null;
+
+  async function poll() {
+    if (!session) return;
+    try {
+      const res = await fetch("/api/rooms/" + session.roomCode + "/state?playerId=" + session.playerId + "&token=" + session.token);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "폴링 실패");
+      $("pollLine").textContent = "";
+      render(data);
+    } catch (e) {
+      $("pollLine").textContent = "연결 확인 중... (" + e.message + ")";
+    }
+  }
+
+  function render(data) {
+    const players = data.players || [];
+    const st = data.state || {};
+    lastRoomStatus = data.status;
+    lastPlayerList = players;
+
+    renderPlayerList(players);
+
+    const isCreator = !!myAdminKey;
+    if (data.status === "waiting") {
+      $("startPanel").classList.toggle("hidden", !isCreator);
+      $("gameBoard").classList.add("hidden");
+      $("phaseLine").textContent = "대기 중 · 참가자 " + players.length + "명";
+      if (isCreator) renderBotNameInputs(players.filter((p) => !p.isBot).length);
+      return;
+    }
+
+    $("startPanel").classList.add("hidden");
+    $("gameBoard").classList.remove("hidden");
+
+    const phaseLabel = { bidding: "경매 진행 중", "table-review": "경매 종료", voting: "투표 진행 중", ended: "종료" };
+    $("phaseLine").textContent = (phaseLabel[st.phase] || st.phase) + " · 참가자 " + players.length + "명";
+
+    $("biddingArea").classList.toggle("hidden", st.phase !== "bidding");
+    $("tableReviewBanner").classList.toggle("hidden", st.phase !== "table-review");
+    $("votingBanner").classList.toggle("hidden", st.phase !== "voting");
+    $("rankPanel").classList.toggle("hidden", st.phase !== "ended");
+
+    if (st.phase === "bidding" && st.currentRound) renderBidding(st.currentRound, data.serverTime);
+    if (st.phase === "table-review") $("startVoteBox").classList.toggle("hidden", !isCreator);
+    if (st.phase === "voting") {
+      $("closeVoteBox").classList.toggle("hidden", !isCreator);
+      renderCountdown("voteTimer", st.voteDeadlineAt, data.serverTime);
+    }
+    if (st.phase === "ended" && st.results) renderResults(st.results, players);
+
+    const me = st.players ? st.players[session.playerId] : null;
+    $("myCash").textContent = me ? fmt(me.cash) + " 엽전" : "-";
+    renderMyItems(me);
+    renderItemLegend(st.publicItemList || [], st.itemResults || []);
+    renderOpponents(players, st.players || {});
+    renderLog(st.log || []);
+  }
+
+  function renderCountdown(elId, deadlineAt, serverTime) {
+    const el = $(elId);
+    if (!deadlineAt) { el.textContent = "--:--"; return; }
+    const remainMs = Math.max(0, deadlineAt - serverTime);
+    const s = Math.ceil(remainMs / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    el.textContent = mm + ":" + ss;
+    el.classList.toggle("hot", s <= 15);
+  }
+
+  function renderBidding(round, serverTime) {
+    $("roundTitle").textContent = "미공개 품목 " + round.roundNumber + " / " + round.totalRounds;
+    renderCountdown("roundTimer", round.deadlineAt, serverTime);
+    if (round.currentBid) {
+      $("bidLine").textContent = "현재 최고가 " + fmt(round.currentBid.amount) + " (입찰자 있음)";
+    } else {
+      $("bidLine").textContent = "아직 입찰이 없습니다. 시작가 " + fmt(round.startPrice);
+    }
+    const floor = round.currentBid ? round.currentBid.amount + 10000 : round.startPrice;
+    const isMineWinning = round.currentBid && session && round.currentBid.bidderId === session.playerId;
+    const btns = $("bidBtns");
+    btns.innerHTML = "";
+    [
+      { label: "+" + fmt(10000), amt: floor },
+      { label: "+" + fmt(30000), amt: (round.currentBid ? round.currentBid.amount : round.startPrice - 10000) + 30000 },
+      { label: "+" + fmt(50000), amt: (round.currentBid ? round.currentBid.amount : round.startPrice - 10000) + 50000 },
+    ].forEach((b) => {
+      const btn = document.createElement("button");
+      btn.textContent = b.label;
+      btn.disabled = !!isMineWinning || busy;
+      btn.addEventListener("click", () => placeBid(b.amt));
+      btns.appendChild(btn);
+    });
+    $("manualBidBtn").disabled = !!isMineWinning || busy;
+  }
+
+  async function placeBid(amount) {
+    if (busy) return;
+    busy = true;
+    $("bidMsg").classList.add("hidden");
+    try {
+      await api("/api/rooms/" + session.roomCode + "/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: newReqId(), playerId: session.playerId, token: session.token, type: "bid", payload: { amount } }),
+      });
+      poll();
+    } catch (e) {
+      $("bidMsg").textContent = e.message;
+      $("bidMsg").classList.remove("hidden");
+    } finally {
+      busy = false;
+    }
+  }
+
+  $("manualBidBtn").addEventListener("click", () => {
+    const v = prompt("입찰 금액을 입력하세요 (숫자만):");
+    if (!v) return;
+    const amt = Number(v.replace(/[^0-9]/g, ""));
+    if (!amt) return;
+    placeBid(amt);
+  });
+
+  function renderMyItems(me) {
+    const el = $("myItems");
+    el.innerHTML = "";
+    const items = me ? me.wonItems || [] : [];
+    if (items.length === 0) {
+      el.innerHTML = '<div class="status-line">아직 낙찰받은 품목이 없습니다.</div>';
+      return;
+    }
+    items.forEach((it) => {
+      const cell = document.createElement("div");
+      cell.className = "itemcell won";
+      cell.innerHTML = itemThumb(it.slug) + "<div>" + it.name + "</div><div>" + fmt(it.price) + "</div>";
+      el.appendChild(cell);
+    });
+  }
+
+  function renderItemLegend(publicItemList, itemResults) {
+    const el = $("itemLegend");
+    el.innerHTML = "";
+    const resolvedBySlug = {};
+    itemResults.forEach((r) => (resolvedBySlug[r.slug] = r));
+    publicItemList.forEach((it) => {
+      const r = resolvedBySlug[it.slug];
+      const cell = document.createElement("div");
+      cell.className = "itemcell" + (r ? " won" : "");
+      if (r) {
+        cell.innerHTML = itemThumb(it.slug) + "<div>" + it.name + "</div><div>" + (r.winnerId ? "낙찰" : "유찰") + "</div>";
+      } else {
+        cell.innerHTML = '<div class="thumb">❓</div><div>' + it.name + "</div><div>미공개</div>";
+      }
+      el.appendChild(cell);
+    });
+  }
+
+  function renderOpponents(players, statePlayers) {
+    const el = $("oppGrid");
+    el.innerHTML = "";
+    players
+      .filter((p) => p.id !== (session && session.playerId))
+      .forEach((p) => {
+        const sp = statePlayers[p.id];
+        const card = document.createElement("div");
+        card.className = "oppcard";
+        card.innerHTML =
+          '<div class="name">' + avatarHtml(p.characterId, 24) + "<span>" + p.name + (p.isBot ? " · BOT" : "") + "</span></div>" +
+          '<div class="cash">' + (sp ? fmt(sp.cash) + " 엽전" : "-") + "</div>" +
+          '<div class="cnt">낙찰 ' + (sp ? (sp.wonItems || []).length : 0) + "개</div>";
+        el.appendChild(card);
+      });
+  }
+
+  function renderResults(results, players) {
+    const nameOf = (id) => { const p = players.find((x) => x.id === id); return p ? p.name : id; };
+    const body = $("rankBody");
+    body.innerHTML = "";
+    results.displayRanking.forEach((r) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + r.rank + "위</td><td>" + nameOf(r.playerId) + "</td><td class='num'>" + r.votes + "</td>";
+      body.appendChild(tr);
+    });
+  }
+
+  function renderPlayerList(players) {
+    const el = $("playerList");
+    el.innerHTML = "";
+    players.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML =
+        '<span><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' +
+        '<span class="name-avatar">' + avatarHtml(p.characterId, 20) + "<span>" + p.name + (p.isBot ? " · BOT" : "") + "</span></span></span>" +
+        "<span>" + (p.connected || p.isBot ? "" : "연결 끊김") + "</span>";
+      el.appendChild(row);
+    });
+  }
+
+  function renderLog(log) {
+    $("logList").innerHTML = log.slice().reverse().map((l) => "<div>" + l + "</div>").join("");
+  }
+
+  // --- 입장 화면 이벤트 ---
+  $("codeInput").addEventListener("input", (e) => refreshTakenCharacters(e.target.value.trim().toUpperCase()));
+  $("joinBtn").addEventListener("click", () => doJoin());
+  $("createBtn").addEventListener("click", async () => {
+    try { await createRoom(); } catch (e) { showJoinErr(e.message); }
+  });
+
+  // --- 경매 시작(방장) ---
+  $("totalPlayersSelect").addEventListener("change", () => {
+    renderBotNameInputs((lastPlayerList || []).filter((p) => !p.isBot).length);
+  });
+  let lastPlayerList = [];
+
+  $("previewBtn").addEventListener("click", async () => {
+    const p1 = $("part1CodeInput").value.trim().toUpperCase();
+    if (!p1) { $("previewMsg").textContent = "1부 방 코드를 입력해주세요."; return; }
+    try {
+      const data = await api(
+        "/api/rooms/" + session.roomCode + "/admin/part1-preview?adminKey=" + encodeURIComponent(myAdminKey) + "&part1RoomCode=" + p1
+      );
+      let msg = "매칭됨: " + data.matched.map((m) => m.name + "(" + m.rank + "등)").join(", ");
+      if (data.unmatched.length) msg += " · 매칭 안 됨(기본 시드머니 적용): " + data.unmatched.join(", ");
+      $("previewMsg").textContent = msg;
+    } catch (e) {
+      $("previewMsg").textContent = "미리보기 실패: " + e.message;
+    }
+  });
+
+  $("startAuctionBtn").addEventListener("click", async () => {
+    try {
+      const body = { adminKey: myAdminKey, totalPlayers: Number($("totalPlayersSelect").value), botNames: botNameDrafts };
+      const p1 = $("part1CodeInput").value.trim().toUpperCase();
+      if (p1) body.fromPart1RoomCode = p1;
+      await api("/api/rooms/" + session.roomCode + "/admin/start-auction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      $("startMsg").classList.add("hidden");
+      poll();
+    } catch (e) {
+      $("startMsg").textContent = "경매 시작 실패: " + e.message;
+      $("startMsg").classList.remove("hidden");
+    }
+  });
+
+  $("startVoteBtn").addEventListener("click", async () => {
+    try {
+      await api("/api/rooms/" + session.roomCode + "/admin/start-vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: myAdminKey }),
+      });
+      poll();
+    } catch (e) {
+      alert("투표 시작 실패: " + e.message);
+    }
+  });
+
+  $("closeVoteBtn").addEventListener("click", async () => {
+    if (!confirm("지금 바로 투표를 마감할까요?")) return;
+    try {
+      await api("/api/rooms/" + session.roomCode + "/admin/close-vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: myAdminKey }),
+      });
+      poll();
+    } catch (e) {
+      alert("투표 마감 실패: " + e.message);
+    }
+  });
+
+  $("leaveBtn").addEventListener("click", () => {
+    localStorage.removeItem("banquet_session");
+    location.reload();
+  });
+
+  renderCharPicker();
+  session = loadSession();
+  if (session) enterGame();
+</script>
+</body>
+</html>
