@@ -354,6 +354,8 @@ function applyAction(room, player, type, payload) {
     Game2.tick(state, now());
     if (type === "bid") {
       Game2.placeBid(state, player.id, payload?.amount, now());
+    } else if (type === "pass") {
+      Game2.passBidding(state, player.id, now());
     } else {
       throw new Error("알 수 없는 행동입니다: " + type);
     }
