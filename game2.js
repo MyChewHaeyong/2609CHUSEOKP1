@@ -93,6 +93,7 @@ function initState(players, ranks, part1Assets, now) {
 }
 
 function startCurrentRound(state, now) {
+  state.phase = "bidding";
   state.currentBid = null;
   state.itemDeadlineAt = now + BID_ROUND_MS;
   state.nextBotThinkAt = now + 3000 + crypto.randomInt(5000);
@@ -155,8 +156,23 @@ function resolveCurrentRound(state, now) {
     state.phase = "table-review";
     state.log.push("경매 종료 — 관리자가 투표를 열면 진행됩니다.");
   } else {
-    startCurrentRound(state, now);
+    // 예전에는 여기서 바로 startCurrentRound()를 불러 다음 품목으로 자동으로 넘어갔지만,
+    // 방송 진행상 낙찰 결과(누가 무엇을 얼마에 가져갔는지)를 화면에 띄우고 멘트를 칠 시간이
+    // 필요하다는 요청에 따라 "round-result" 상태에서 멈추도록 바꿨습니다. 다음 품목은
+    // 관리자가 advanceRound()(=관리자 화면의 "다음 품목 시작" 버튼)를 눌러야 시작됩니다.
+    state.phase = "round-result";
+    state.log.push("관리자가 다음 품목을 열면 이어집니다.");
   }
+}
+
+// 관리자가 "다음 품목 시작"을 눌렀을 때 호출됩니다. round-result(직전 품목 결과 화면)에서만
+// 허용되며, 다음 품목의 5분 타이머를 새로 시작합니다.
+function advanceRound(state, now) {
+  if (state.phase !== "round-result") {
+    throw new Error("지금은 다음 품목을 시작할 수 없습니다.");
+  }
+  startCurrentRound(state, now);
+  state.log.push("다음 품목 시작");
 }
 
 function placeBid(state, playerId, amount, now) {
@@ -353,6 +369,13 @@ function serializeForClient(state, opts) {
       passedPlayerIds: state.passedThisRound,
     };
   }
+  if (state.phase === "round-result") {
+    // 방금 끝난 품목의 결과(정체 공개 + 낙찰자/가격, 유찰이면 winnerId/finalPrice가 null)와
+    // 다음 품목 번호를 함께 내려줍니다. 관리자가 "다음 품목 시작"을 누르기 전까지 이 상태로 멈춰 있습니다.
+    out.lastResult = state.itemResults[state.itemResults.length - 1] || null;
+    out.nextRoundNumber = state.roundPos + 1;
+    out.totalRounds = ITEMS.length;
+  }
   if (state.phase === "voting") {
     out.voteDeadlineAt = state.voteDeadlineAt;
     out.totalVotes = Object.keys(state.votes).length;
@@ -376,6 +399,7 @@ module.exports = {
   tick,
   placeBid,
   passBidding,
+  advanceRound,
   startVoting,
   submitVote,
   closeVoting,
