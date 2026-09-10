@@ -624,6 +624,26 @@ app.post("/api/rooms/:code/admin/start-auction", (req, res) => {
   });
 });
 
+// 2부 다음 품목 시작: 한 품목의 낙찰/유찰이 정해지면 자동으로 다음 품목으로 넘어가지 않고
+// "round-result"(결과 공개) 상태에서 멈춥니다. 방송 진행자가 화면/멘트로 결과를 충분히 보여준
+// 뒤 이 버튼(관리자 전용)으로 직접 다음 품목을 엽니다.
+app.post("/api/rooms/:code/admin/next-round", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  if (room.game_mode !== "auction") {
+    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+  }
+  const state = JSON.parse(room.state_json);
+  try {
+    Game2.advanceRound(state, now());
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: e.message });
+  }
+  const newVersion = persistState(room, state, "다음 품목 시작", auctionStatusFor(state.phase));
+  res.json({ ok: true, stateVersion: newVersion, state: Game2.serializeForClient(state, { forAdmin: true }) });
+});
+
 // 2부 투표 열기: 14개 품목 경매가 전부 끝난 뒤(table-review) 관리자가 준비되면 5분 투표를 시작합니다.
 app.post("/api/rooms/:code/admin/start-vote", (req, res) => {
   const room = getRoom(req.params.code);
