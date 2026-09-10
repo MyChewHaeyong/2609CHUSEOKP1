@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>팔도마블 - 관리자</title>
+<title>한가위 콜라보 - 관리자</title>
 <style>
   :root{ --bg:#14122a; --panel:#1e1a3c; --gold:#D9A441; --red:#C0392B; --cream:#F4E9D8; --line:#332e5c; --ok:#4E9F63; }
   *{box-sizing:border-box}
@@ -12,29 +12,33 @@
   h1{color:var(--gold); font-size:21px; margin:0 0 18px}
   .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px}
   .panel h2{font-size:14px; color:var(--gold); margin:0 0 12px; text-transform:uppercase; letter-spacing:.04em}
+  .panel h2 .tag{font-size:10.5px; color:#9d97c2; text-transform:none; letter-spacing:0; font-weight:400; margin-left:6px}
   label{display:block; font-size:12.5px; color:#9d97c2; margin-bottom:5px}
   input, textarea{width:100%; padding:9px 10px; border-radius:7px; border:1px solid var(--line); background:#100e24; color:var(--cream); font-size:14px; margin-bottom:10px; font-family:inherit}
   textarea{min-height:70px; resize:vertical}
   button{padding:9px 14px; border-radius:7px; border:none; background:var(--gold); color:#1E1B3A; font-weight:700; font-size:13.5px; cursor:pointer; margin-right:8px; margin-bottom:8px}
   button.danger{background:var(--red); color:#fff}
   button.secondary{background:transparent; border:1px solid var(--gold); color:var(--gold)}
-  .row{display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:13.5px}
+  .row{display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:13.5px; gap:10px}
   .row:last-child{border-bottom:none}
-  .dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:8px; background:#666}
+  .row .right{text-align:right; color:#9d97c2; font-size:12px}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:8px; background:#666; flex-shrink:0}
   .dot.on{background:var(--ok)}
   .msg{font-size:12.5px; color:#9d97c2; margin-top:6px; white-space:pre-wrap}
   .msg.err{color:#ff9a8c}
+  .hint{font-size:11.5px; color:#9d97c2; margin:-4px 0 10px; line-height:1.6}
   select{width:100%; padding:9px 10px; border-radius:7px; border:1px solid var(--line); background:#100e24; color:var(--cream); margin-bottom:10px}
   .avatar{position:relative; border-radius:50%; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; background:#100e24}
   .avatar img{display:block; width:100%; height:100%; object-fit:cover}
   .avatar .avatar-fallback{display:none; line-height:1}
-  .name-avatar{display:inline-flex; align-items:center; gap:6px}
-  .name-avatar .avatar{width:20px; height:20px; font-size:11px}
+  .name-avatar{display:inline-flex; align-items:center; gap:6px; min-width:0}
+  .name-avatar span:last-child{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .hidden{display:none}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>팔도마블 · 관리자(백스테이지) 화면</h1>
+  <h1>한가위 콜라보 · 관리자(백스테이지) 화면</h1>
 
   <div class="panel">
     <h2>접속</h2>
@@ -49,12 +53,14 @@
   <div class="panel">
     <h2>현재 상태</h2>
     <div id="statusLine" class="msg"></div>
+    <p class="hint" style="margin-top:6px">방을 불러오면 그 방의 게임모드(1부 팔도마블 / 2부 만찬경매)에 맞는 관리 도구가 아래에 자동으로 나타납니다.</p>
     <div id="playerList" style="margin-top:8px"></div>
     <button id="refreshBtn" class="secondary" style="margin-top:10px">지금 새로고침</button>
   </div>
 
-  <div class="panel" id="startPanel">
-    <h2>게임 시작 (인원수 설정)</h2>
+  <!-- 1부 팔도마블 전용: 게임 시작 -->
+  <div class="panel hidden" id="startPanel">
+    <h2>게임 시작 <span class="tag">1부 팔도마블</span></h2>
     <p style="font-size:12.5px;color:#9d97c2;margin:0 0 10px">대기 중일 때만 사용할 수 있습니다. 지금까지 입장한 사람 수보다 적게 설정할 수 없고, 남은 자리는 BOT이 자동으로 채웁니다.</p>
     <label>전체 인원 수</label>
     <select id="totalPlayers">
@@ -67,15 +73,69 @@
     <div id="startMsg" class="msg"></div>
   </div>
 
-  <div class="panel" id="forceEndPanel">
-    <h2>비상 강제 종료</h2>
+  <!-- 2부 만찬경매 전용: 경매/투표 진행 관리 -->
+  <div class="panel hidden" id="auctionPanel">
+    <h2>경매 진행 관리 <span class="tag">2부 만찬경매</span></h2>
+    <div id="auctionStatusLine" class="msg"></div>
+
+    <div id="auctionStartBox" class="hidden" style="margin-top:10px">
+      <p style="font-size:12.5px;color:#9d97c2;margin:0 0 10px">대기 중일 때만 사용할 수 있습니다. 남은 자리는 BOT이 자동으로 채웁니다.</p>
+      <label>전체 인원 수</label>
+      <select id="auctionTotalPlayers">
+        <option value="1">1명</option>
+        <option value="2">2명</option>
+        <option value="3">3명</option>
+        <option value="4" selected>4명</option>
+      </select>
+      <div id="auctionBotNamesArea"></div>
+      <label style="margin-top:6px">1부 방 코드로 등수 자동 연결 (선택)</label>
+      <input id="auctionPart1Code" placeholder="예: B3Q9" style="text-transform:uppercase" />
+      <button id="auctionPreviewBtn" class="secondary">미리보기</button>
+      <div id="auctionPreviewMsg" class="msg"></div>
+      <button id="auctionStartBtn" style="margin-top:6px">경매 시작</button>
+      <div id="auctionStartMsg" class="msg"></div>
+    </div>
+
+    <div id="auctionBiddingBox" class="hidden" style="margin-top:10px">
+      <p style="font-size:13px;margin:0">품목 <b id="auctionRoundNum">-</b> · 남은 시간 <b id="auctionRoundTimer">--:--</b></p>
+      <p id="auctionBidInfo" class="msg"></p>
+      <p class="hint">경매는 타이머로 자동 진행되며, 사람 참가자 전원이 포기하면 조기에 낙찰/유찰됩니다. 이 화면에서 할 일은 없습니다.</p>
+    </div>
+
+    <div id="auctionRoundResultBox" class="hidden" style="margin-top:10px">
+      <p id="auctionResultLine" class="msg" style="color:var(--cream)"></p>
+      <button id="auctionNextRoundBtn">다음 품목 시작</button>
+      <div id="auctionNextRoundMsg" class="msg"></div>
+    </div>
+
+    <div id="auctionTableReviewBox" class="hidden" style="margin-top:10px">
+      <p style="font-size:13px;margin:0 0 8px">경매 14개 품목이 모두 끝났습니다. 준비되면 투표를 여세요.</p>
+      <button id="auctionStartVoteBtn">투표 열기</button>
+      <div id="auctionStartVoteMsg" class="msg"></div>
+    </div>
+
+    <div id="auctionVotingBox" class="hidden" style="margin-top:10px">
+      <p style="font-size:13px;margin:0">남은 시간 <b id="auctionVoteTimer">--:--</b> · 총 <b id="auctionVoteTotal">0</b>표</p>
+      <div id="auctionVoteCounts" class="msg"></div>
+      <button id="auctionCloseVoteBtn" class="danger">지금 바로 투표 마감</button>
+      <div id="auctionCloseVoteMsg" class="msg"></div>
+    </div>
+
+    <div id="auctionEndedBox" class="hidden" style="margin-top:10px">
+      <div id="auctionResultsList" class="msg" style="color:var(--cream)"></div>
+    </div>
+  </div>
+
+  <!-- 1부 팔도마블 전용: 비상 강제 종료 -->
+  <div class="panel hidden" id="forceEndPanel">
+    <h2>비상 강제 종료 <span class="tag">1부 팔도마블</span></h2>
     <p style="font-size:12.5px;color:#9d97c2;margin:0 0 10px">방송 시간이 다 되어 "최후 1인 생존"을 기다릴 수 없을 때, 지금 이 순간의 자산(현금+토지+건물 평가액) 기준으로 순위를 확정하고 게임을 끝냅니다. 되돌리기로 취소할 수 있습니다.</p>
     <button id="forceEndBtn" class="danger">지금 강제 종료하고 순위 정산</button>
     <div id="forceEndMsg" class="msg"></div>
   </div>
 
   <div class="panel">
-    <h2>복구 도구</h2>
+    <h2>복구 도구 <span class="tag">1·2부 공통</span></h2>
     <button id="undoBtn" class="danger">한 단계 되돌리기</button>
     <button id="exportBtn" class="secondary">JSON 백업 내려받기</button>
     <label style="margin-top:10px">JSON 백업 파일로 복원</label>
@@ -85,14 +145,15 @@
   </div>
 
   <div class="panel">
-    <h2>비상 대리 입력 (Emergency Host Mode)</h2>
+    <h2>비상 대리 입력 <span class="tag">1·2부 공통</span></h2>
     <p style="font-size:12.5px;color:#9d97c2;margin:0 0 10px">특정 참가자의 화면이 먹통이어도, 관리자가 그 사람 대신 행동을 입력해서 진행을 이어갈 수 있습니다.</p>
     <label>대상 참가자</label>
     <select id="asPlayer"></select>
-    <label>행동 타입 (예: ping)</label>
+    <label>행동 타입</label>
     <input id="actType" placeholder="ping" />
     <label>행동 데이터 (JSON, 비워두면 {})</label>
     <textarea id="actPayload" placeholder="{}"></textarea>
+    <p id="emergencyHint" class="hint"></p>
     <button id="emergencyBtn" class="danger">대신 실행</button>
     <div id="emergencyMsg" class="msg"></div>
   </div>
@@ -102,6 +163,8 @@
   const $ = (id) => document.getElementById(id);
   let pollTimer = null;
   let lastPlayers = [];
+  let currentGameMode = null; // "paldomarble" | "auction" | null(방 로드 전)
+  let auctionMaxItems = 5;
 
   // player.html과 동일한 캐릭터 목록/아바타 표시 로직 (관리자 화면에서는 참가자가 고른 캐릭터를
   // 확인만 하는 용도). 나중에 public/characters/char1~4.png를 올리면 자동으로 이미지가 적용됨.
@@ -125,6 +188,20 @@
       '<span class="avatar-fallback" style="font-size:' + fs + 'px">' + c.emoji + "</span>" +
       "</div>"
     );
+  }
+  const fmtMoney = (n) => (n || 0).toLocaleString("ko-KR");
+  function gameModeLabel(m) {
+    if (m === "auction") return "2부 만찬경매";
+    if (m === "paldomarble") return "1부 팔도마블";
+    return m || "-";
+  }
+  function renderAuctionCountdown(el, deadlineAt, serverTime) {
+    if (!deadlineAt) { el.textContent = "--:--"; return; }
+    const remainMs = Math.max(0, deadlineAt - serverTime);
+    const s = Math.ceil(remainMs / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    el.textContent = mm + ":" + ss;
   }
 
   function creds() {
@@ -150,26 +227,113 @@
     return data;
   }
 
+  // 게임모드에 맞는 패널만 보여줌. 방을 아직 안 불러왔으면(currentGameMode === null) 셋 다 숨김.
+  function applyGameModeVisibility() {
+    const isP1 = currentGameMode === "paldomarble";
+    const isP2 = currentGameMode === "auction";
+    $("startPanel").classList.toggle("hidden", !isP1);
+    $("forceEndPanel").classList.toggle("hidden", !isP1);
+    $("auctionPanel").classList.toggle("hidden", !isP2);
+    $("emergencyHint").textContent = isP2
+      ? '2부 예시 — 행동 타입 bid + 데이터 {"amount":70000} · 행동 타입 pass + 데이터 {}'
+      : "1부 예시 — 행동 타입 ping + 데이터 {} (주사위 굴리기 등 다른 행동은 payload 형식이 로직에 따라 다릅니다)";
+  }
+
   async function refresh() {
     const { code, key } = creds();
     if (!code || !key) return;
     try {
       const data = await api("/api/rooms/" + code + "/admin?adminKey=" + encodeURIComponent(key));
+      currentGameMode = data.room.gameMode;
       $("statusLine").textContent =
-        "상태: " + data.room.status + " · 상태버전 " + data.room.stateVersion + " · 게임모드 " + data.room.gameMode;
+        "상태: " + data.room.status + " · 상태버전 " + data.room.stateVersion + " · 게임모드 " + gameModeLabel(currentGameMode);
       $("statusLine").classList.remove("err");
       lastPlayers = data.players;
-      renderPlayers(data.players);
+      applyGameModeVisibility();
       renderPlayerSelect(data.players);
-      if (data.room.status === "waiting") {
-        renderBotNameInputs(data.players.filter((p) => !p.isBot).length);
+
+      if (currentGameMode === "auction") {
+        await refreshAuction(code, key, data.players);
       } else {
-        $("botNamesArea").innerHTML = "";
-        renderedBotsNeeded = -1;
+        renderPlayers(data.players);
+        if (data.room.status === "waiting") {
+          renderBotNameInputs(data.players.filter((p) => !p.isBot).length);
+        } else {
+          $("botNamesArea").innerHTML = "";
+          renderedBotsNeeded = -1;
+        }
       }
     } catch (e) {
       $("statusLine").textContent = "불러오기 실패: " + e.message;
       $("statusLine").classList.add("err");
+    }
+  }
+
+  // 2부(만찬경매) 상태는 /admin의 원본 state가 아니라 /state(+adminKey)를 따로 불러옵니다.
+  // /admin은 서버 내부 원본 state를 그대로 돌려주는데, 2부는 경매 중인 품목 정체를 낙찰
+  // 전까지 절대 노출하지 않아야 하는 블라인드 규칙이 있어서, 그 마스킹을 그대로 지켜주는
+  // /state(Game2.serializeForClient) 쪽을 써야 방송 중 관리자 화면을 통해 스포일러가 새는
+  // 일을 막을 수 있습니다. adminKey를 실어 보내면 투표 중 실시간 득표수처럼 관리자에게만
+  // 추가로 공개되는 정보도 함께 내려옵니다.
+  async function refreshAuction(code, key, players) {
+    const res = await fetch("/api/rooms/" + code + "/state?adminKey=" + encodeURIComponent(key));
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "2부 상태 조회 실패");
+    const st = data.state || {};
+    auctionMaxItems = st.maxItemsPerPlayer || 5;
+    renderPlayers(players, st.players || null, auctionMaxItems);
+
+    if (data.status === "waiting") {
+      renderAuctionBotNameInputs(players.filter((p) => !p.isBot).length);
+    } else {
+      $("auctionBotNamesArea").innerHTML = "";
+      renderedAuctionBotsNeeded = -1;
+    }
+
+    ["auctionStartBox", "auctionBiddingBox", "auctionRoundResultBox", "auctionTableReviewBox", "auctionVotingBox", "auctionEndedBox"]
+      .forEach((id) => $(id).classList.add("hidden"));
+
+    if (data.status === "waiting") {
+      $("auctionStartBox").classList.remove("hidden");
+      $("auctionStatusLine").textContent = "대기 중 · 참가자 " + players.length + "명";
+      return;
+    }
+
+    const phaseLabel = { bidding: "경매 진행 중", "round-result": "품목 결과 공개", "table-review": "경매 종료", voting: "투표 진행 중", ended: "종료" };
+    $("auctionStatusLine").textContent =
+      (phaseLabel[st.phase] || st.phase) + " · 남은 품목 " + (st.remainingCount != null ? st.remainingCount : "-") + " / " + (st.totalItems || 14);
+
+    if (st.phase === "bidding" && st.currentRound) {
+      $("auctionBiddingBox").classList.remove("hidden");
+      $("auctionRoundNum").textContent = st.currentRound.roundNumber + " / " + st.currentRound.totalRounds;
+      renderAuctionCountdown($("auctionRoundTimer"), st.currentRound.deadlineAt, data.serverTime);
+      $("auctionBidInfo").textContent = st.currentRound.currentBid
+        ? "현재 최고가 " + fmtMoney(st.currentRound.currentBid.amount) + "원 (정체는 낙찰 전까지 비공개)"
+        : "아직 입찰 없음 · 시작가 " + fmtMoney(st.currentRound.startPrice) + "원 (정체는 낙찰 전까지 비공개)";
+    } else if (st.phase === "round-result" && st.lastResult) {
+      $("auctionRoundResultBox").classList.remove("hidden");
+      const r = st.lastResult;
+      const winnerName = r.winnerId && st.players && st.players[r.winnerId] ? st.players[r.winnerId].name : null;
+      $("auctionResultLine").textContent =
+        "공개! " + r.name + " — " + (winnerName ? winnerName + " 낙찰 (" + fmtMoney(r.finalPrice) + "원)" : "유찰 (입찰 없음)") +
+        (st.nextRoundNumber <= st.totalRounds ? " · 다음 품목 " + st.nextRoundNumber + " / " + st.totalRounds : "");
+    } else if (st.phase === "table-review") {
+      $("auctionTableReviewBox").classList.remove("hidden");
+    } else if (st.phase === "voting") {
+      $("auctionVotingBox").classList.remove("hidden");
+      renderAuctionCountdown($("auctionVoteTimer"), st.voteDeadlineAt, data.serverTime);
+      $("auctionVoteTotal").textContent = st.totalVotes || 0;
+      $("auctionVoteCounts").textContent = st.voteCounts
+        ? players.map((p) => p.name + ": " + (st.voteCounts[p.id] || 0) + "표").join(" · ")
+        : "";
+    } else if (st.phase === "ended" && st.results) {
+      $("auctionEndedBox").classList.remove("hidden");
+      $("auctionResultsList").textContent = st.results.displayRanking
+        .map((r) => {
+          const p = players.find((x) => x.id === r.playerId);
+          return r.rank + "위 " + (p ? p.name : r.playerId) + " (" + r.votes + "표)";
+        })
+        .join(" · ");
     }
   }
 
@@ -182,7 +346,7 @@
   function renderBotNameInputs(humanCount) {
     const total = Number($("totalPlayers").value);
     const botsNeeded = Math.max(0, total - humanCount);
-    if (botsNeeded === renderedBotsNeeded) return; // 개수 그대로면 다시 그리지 않음(포커스 유지)
+    if (botsNeeded === renderedBotsNeeded) return;
     renderedBotsNeeded = botsNeeded;
 
     const area = $("botNamesArea");
@@ -202,16 +366,48 @@
     }
   }
 
-  function renderPlayers(players) {
+  // 2부용 BOT 이름 입력(위와 동일한 포커스 유지 로직, 별도 상태로 분리)
+  let auctionBotNameDrafts = [];
+  let renderedAuctionBotsNeeded = -1;
+  function renderAuctionBotNameInputs(humanCount) {
+    const total = Number($("auctionTotalPlayers").value);
+    const botsNeeded = Math.max(0, total - humanCount);
+    if (botsNeeded === renderedAuctionBotsNeeded) return;
+    renderedAuctionBotsNeeded = botsNeeded;
+
+    const area = $("auctionBotNamesArea");
+    area.innerHTML = "";
+    if (botsNeeded === 0) return;
+    const label = document.createElement("label");
+    label.textContent = "BOT 이름 (비워두면 기본 이름 사용)";
+    area.appendChild(label);
+    for (let i = 0; i < botsNeeded; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.maxLength = 20;
+      input.placeholder = "BOT " + (i + 1) + " 이름 (선택)";
+      input.value = auctionBotNameDrafts[i] || "";
+      input.addEventListener("input", () => { auctionBotNameDrafts[i] = input.value; });
+      area.appendChild(input);
+    }
+  }
+
+  // auctionPlayers/maxItems가 주어지면(2부일 때) 참가자 목록에 자금·낙찰 개수(X/최대)를 함께 표시합니다.
+  function renderPlayers(players, auctionPlayers, maxItems) {
     const el = $("playerList");
     el.innerHTML = "";
     players.forEach((p) => {
       const row = document.createElement("div");
       row.className = "row";
+      let extra = "";
+      if (auctionPlayers && auctionPlayers[p.id]) {
+        const sp = auctionPlayers[p.id];
+        extra = fmtMoney(sp.cash) + "원 · 낙찰 " + (sp.wonItems || []).length + " / " + (maxItems || 5);
+      }
       row.innerHTML =
         '<span><span class="dot ' + (p.connected ? "on" : "") + '"></span>' +
         '<span class="name-avatar">' + avatarHtml(p.characterId, 20) + "<span>" + p.name + " (#" + (p.seat + 1) + ")" + (p.isBot ? " · BOT" : "") + "</span></span></span>" +
-        "<span>" + (p.connected ? "연결됨" : "연결 끊김") + "</span>";
+        '<span class="right">' + (p.connected ? "연결됨" : "연결 끊김") + (extra ? "<br/>" + extra : "") + "</span>";
       el.appendChild(row);
     });
   }
@@ -237,6 +433,7 @@
   });
   $("refreshBtn").addEventListener("click", refresh);
 
+  // --- 1부 팔도마블: 게임 시작 ---
   $("totalPlayers").addEventListener("change", () => {
     const humanCount = (lastPlayers || []).filter((p) => !p.isBot).length;
     renderBotNameInputs(humanCount);
@@ -278,6 +475,103 @@
     }
   });
 
+  // --- 2부 만찬경매: 경매/투표 진행 관리 ---
+  $("auctionTotalPlayers").addEventListener("change", () => {
+    const humanCount = (lastPlayers || []).filter((p) => !p.isBot).length;
+    renderAuctionBotNameInputs(humanCount);
+  });
+
+  $("auctionPreviewBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    const p1 = $("auctionPart1Code").value.trim().toUpperCase();
+    if (!p1) { $("auctionPreviewMsg").textContent = "1부 방 코드를 입력해주세요."; return; }
+    try {
+      const data = await api(
+        "/api/rooms/" + code + "/admin/part1-preview?adminKey=" + encodeURIComponent(key) + "&part1RoomCode=" + p1
+      );
+      let msg = "매칭됨: " + data.matched.map((m) => m.name + "(" + m.rank + "등)").join(", ");
+      if (data.unmatched.length) msg += " · 매칭 안 됨(기본 시드머니 적용): " + data.unmatched.join(", ");
+      $("auctionPreviewMsg").textContent = msg;
+      $("auctionPreviewMsg").classList.remove("err");
+    } catch (e) {
+      $("auctionPreviewMsg").textContent = "미리보기 실패: " + e.message;
+      $("auctionPreviewMsg").classList.add("err");
+    }
+  });
+
+  $("auctionStartBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    try {
+      const body = { adminKey: key, totalPlayers: Number($("auctionTotalPlayers").value), botNames: auctionBotNameDrafts };
+      const p1 = $("auctionPart1Code").value.trim().toUpperCase();
+      if (p1) body.fromPart1RoomCode = p1;
+      const data = await api("/api/rooms/" + code + "/admin/start-auction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      $("auctionStartMsg").textContent = "경매를 시작했습니다. 참가자 " + data.players.length + "명 (부족한 자리는 BOT으로 채워짐).";
+      $("auctionStartMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("auctionStartMsg").textContent = "경매 시작 실패: " + e.message;
+      $("auctionStartMsg").classList.add("err");
+    }
+  });
+
+  $("auctionNextRoundBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    try {
+      await api("/api/rooms/" + code + "/admin/next-round", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key }),
+      });
+      $("auctionNextRoundMsg").textContent = "다음 품목을 시작했습니다.";
+      $("auctionNextRoundMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("auctionNextRoundMsg").textContent = "다음 품목 시작 실패: " + e.message;
+      $("auctionNextRoundMsg").classList.add("err");
+    }
+  });
+
+  $("auctionStartVoteBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    try {
+      await api("/api/rooms/" + code + "/admin/start-vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key }),
+      });
+      $("auctionStartVoteMsg").textContent = "투표를 시작했습니다.";
+      $("auctionStartVoteMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("auctionStartVoteMsg").textContent = "투표 시작 실패: " + e.message;
+      $("auctionStartVoteMsg").classList.add("err");
+    }
+  });
+
+  $("auctionCloseVoteBtn").addEventListener("click", async () => {
+    if (!confirm("지금 바로 투표를 마감할까요?")) return;
+    const { code, key } = creds();
+    try {
+      await api("/api/rooms/" + code + "/admin/close-vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key }),
+      });
+      $("auctionCloseVoteMsg").textContent = "투표를 마감했습니다.";
+      $("auctionCloseVoteMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("auctionCloseVoteMsg").textContent = "투표 마감 실패: " + e.message;
+      $("auctionCloseVoteMsg").classList.add("err");
+    }
+  });
+
+  // --- 복구 도구 (1·2부 공통) ---
   $("undoBtn").addEventListener("click", async () => {
     const { code, key } = creds();
     try {
@@ -302,7 +596,7 @@
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "paldomarble-backup-" + code + "-" + Date.now() + ".json";
+      a.download = "backup-" + code + "-" + Date.now() + ".json";
       a.click();
       $("recoveryMsg").textContent = "백업 파일을 내려받았습니다.";
       $("recoveryMsg").classList.remove("err");
