@@ -157,7 +157,7 @@
       card.innerHTML =
         '<div class="head"><div class="name-avatar">' + avatarHtml(p.characterId, 30) +
         '<span class="name"><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' + p.name + (p.isBot ? " · BOT" : "") + "</span></div>" +
-        '<div class="cash">' + fmt(sp.cash) + " 엽전</div></div>" +
+        '<div class="cash">' + fmt(sp.cash) + " 원</div></div>" +
         '<div class="sang">' +
         (items.length ? items.map(sangCell).join("") : '<div class="empty-hint">아직 낙찰받은 품목 없음</div>') +
         "</div>";
