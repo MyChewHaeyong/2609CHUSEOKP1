@@ -198,7 +198,7 @@
           avatarHtml(p.characterId, 44) +
           '<div><div class="name"><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' + p.name + "</div>" +
           '<div class="seat">' + (p.isBot ? "BOT · " : "") + "#" + (p.seat + 1) + "번" + (stateP && stateP.bankrupt ? " · 파산" : "") + "</div>" +
-          (stateP ? '<div class="cash">' + fmt(stateP.cash) + " 엽전</div>" : "") + "</div>";
+          (stateP ? '<div class="cash">' + fmt(stateP.cash) + " 원</div>" : "") + "</div>";
         grid.appendChild(card);
       });
 
