@@ -144,6 +144,7 @@
           <div class="timer" id="roundTimer">--:--</div>
           <div class="bidline" id="bidLine">아직 입찰이 없습니다. 시작가 -</div>
           <div id="passedNotice" class="hidden" style="font-size:13px; color:#9d97c2; margin:2px 0 10px">이번 품목은 입찰을 포기했습니다. 다음 품목부터 다시 참여할 수 있어요.</div>
+          <div id="maxedNotice" class="hidden" style="font-size:13px; color:#9d97c2; margin:2px 0 10px">이미 품목을 최대 개수만큼 낙찰받아 더 이상 입찰할 수 없습니다.</div>
           <div id="bidControls">
             <div class="bidbtns" id="bidBtns"></div>
             <div class="manualbid-row">
@@ -195,10 +196,11 @@
 
       <div class="panel">
         <div class="stat"><div class="lbl">내 자금</div><div class="val" id="myCash">-</div></div>
+        <div class="stat"><div class="lbl">낙찰 품목</div><div class="val" id="myItemCount">0 / 5</div></div>
       </div>
 
       <div class="panel panel-wide">
-        <h2>내 차례상</h2>
+        <h2>내 차례상 <span id="myItemsHeading" style="color:#9d97c2; font-weight:400; font-size:12.5px"></span></h2>
         <div class="itemgrid" id="myItems"></div>
       </div>
 
@@ -437,7 +439,11 @@
     $("votingBanner").classList.toggle("hidden", st.phase !== "voting");
     $("rankPanel").classList.toggle("hidden", st.phase !== "ended");
 
-    if (st.phase === "bidding" && st.currentRound) renderBidding(st.currentRound, data.serverTime);
+    const maxItems = st.maxItemsPerPlayer || 5;
+    const me = st.players ? st.players[session.playerId] : null;
+    const myCount = me ? (me.wonItems || []).length : 0;
+
+    if (st.phase === "bidding" && st.currentRound) renderBidding(st.currentRound, data.serverTime, myCount, maxItems);
     if (st.phase === "round-result" && st.lastResult) renderRoundResult(st.lastResult, st.nextRoundNumber, st.totalRounds, st.players || {}, isCreator);
     if (st.phase === "table-review") $("startVoteBox").classList.toggle("hidden", !isCreator);
     if (st.phase === "voting") {
@@ -446,11 +452,12 @@
     }
     if (st.phase === "ended" && st.results) renderResults(st.results, players);
 
-    const me = st.players ? st.players[session.playerId] : null;
     $("myCash").textContent = me ? fmt(me.cash) + " 원" : "-";
+    $("myItemCount").textContent = myCount + " / " + maxItems;
+    $("myItemsHeading").textContent = "(" + myCount + " / " + maxItems + ")";
     renderMyItems(me);
     renderItemLegend(st.publicItemList || [], st.itemResults || []);
-    renderOpponents(players, st.players || {});
+    renderOpponents(players, st.players || {}, maxItems);
     renderLog(st.log || []);
   }
 
@@ -485,7 +492,7 @@
     return quickBidBtnEls;
   }
 
-  function renderBidding(round, serverTime) {
+  function renderBidding(round, serverTime, myCount, maxItems) {
     $("roundTitle").textContent = "미공개 품목 " + round.roundNumber + " / " + round.totalRounds;
     renderCountdown("roundTimer", round.deadlineAt, serverTime);
     if (round.currentBid) {
@@ -496,10 +503,15 @@
     const floor = round.currentBid ? round.currentBid.amount + 10000 : round.startPrice;
     const isMineWinning = round.currentBid && session && round.currentBid.bidderId === session.playerId;
     const hasPassed = !!(session && (round.passedPlayerIds || []).includes(session.playerId));
+    // 이미 최대 개수(기본 5개)를 낙찰받은 사람은 더 이상 입찰할 수 없음(서버도 거부하지만,
+    // 화면에서 먼저 막아서 헛클릭/오해를 줄임). 이미 최고 입찰자인 라운드라면 그 낙찰 자체는
+    // 그대로 진행되므로(포기 불가와 같은 이유) 여기 조건에는 포함하지 않습니다.
+    const isMaxed = !isMineWinning && myCount >= maxItems;
 
     $("passedNotice").classList.toggle("hidden", !hasPassed);
-    $("bidControls").classList.toggle("hidden", hasPassed);
-    if (hasPassed) return;
+    $("maxedNotice").classList.toggle("hidden", hasPassed || !isMaxed);
+    $("bidControls").classList.toggle("hidden", hasPassed || isMaxed);
+    if (hasPassed || isMaxed) return;
 
     const specs = [
       { label: "+" + fmt(10000), amt: floor },
@@ -630,7 +642,7 @@
     });
   }
 
-  function renderOpponents(players, statePlayers) {
+  function renderOpponents(players, statePlayers, maxItems) {
     const el = $("oppGrid");
     el.innerHTML = "";
     players
@@ -642,7 +654,7 @@
         card.innerHTML =
           '<div class="name">' + avatarHtml(p.characterId, 24) + "<span>" + p.name + (p.isBot ? " · BOT" : "") + "</span></div>" +
           '<div class="cash">' + (sp ? fmt(sp.cash) + " 원" : "-") + "</div>" +
-          '<div class="cnt">낙찰 ' + (sp ? (sp.wonItems || []).length : 0) + "개</div>";
+          '<div class="cnt">낙찰 ' + (sp ? (sp.wonItems || []).length : 0) + " / " + maxItems + "</div>";
         el.appendChild(card);
       });
   }
