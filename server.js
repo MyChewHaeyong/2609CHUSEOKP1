@@ -7,6 +7,7 @@ const express = require("express");
 const Database = require("better-sqlite3");
 const Game = require("./game.js");
 const Game2 = require("./game2.js"); // 2부 만찬경매
+const SoopConnector = require("./soopConnector.js"); // 후원 효과: SOOP 자동 감지(보조 수단)
 
 const app = express();
 app.use(express.json());
@@ -405,6 +406,9 @@ app.get("/api/rooms/:code/admin", (req, res) => {
     },
     players: getPlayers(room.code).map(publicPlayer),
     recentActions,
+    // 후원 효과: 참가자별 SOOP 자동 감지 연결 상태(관리자 화면에서 참가자마다 "연결됨/끊김"을
+    // 나란히 보여주기 위함). { [playerId]: status } 형태.
+    soopStatuses: SoopConnector.getStatusesForRoom(room.code),
   });
 });
 
@@ -470,8 +474,13 @@ app.post("/api/rooms/:code/admin/start-game", (req, res) => {
   }
 
   const allPlayers = db.prepare("SELECT * FROM players WHERE room_code = ? ORDER BY seat ASC").all(room.code);
+  // 게임 시작 전(waiting)부터 관리자가 수동 +1 버튼이나 SOOP 자동감지로 후원 효과를 이미
+  // 참가자별로 집계해뒀을 수 있으므로, 있으면 그대로 이어받습니다(파트별 독립이지, 게임
+  // 시작 전후로 끊기는 게 아님).
   const gameState = Game.initState(
-    allPlayers.map((p) => ({ id: p.id, name: p.name, seat: p.seat, isBot: !!p.is_bot, characterId: p.character_id || null }))
+    allPlayers.map((p) => ({ id: p.id, name: p.name, seat: p.seat, isBot: !!p.is_bot, characterId: p.character_id || null })),
+    state.donationEffects,
+    state.donationEnabled
   );
   Game.runBotsIfNeeded(gameState, now());
 
@@ -605,11 +614,15 @@ app.post("/api/rooms/:code/admin/start-auction", (req, res) => {
 
   let gameState;
   try {
+    // 경매 시작 전(waiting)부터 이미 참가자별로 집계된 후원 효과가 있으면 이어받습니다
+    // (1부 start-game과 같은 이유 — 후원 카운트는 방송 진행과 무관하게 계속 쌓일 수 있음).
     gameState = Game2.initState(
       allPlayers.map((p) => ({ id: p.id, name: p.name, isBot: !!p.is_bot, characterId: p.character_id || null })),
       ranks,
       part1Assets,
-      now()
+      now(),
+      existing.donationEffects,
+      existing.donationEnabled
     );
   } catch (e) {
     return res.status(400).json({ ok: false, error: e.message });
@@ -708,6 +721,130 @@ app.post("/api/rooms/:code/vote", (req, res) => {
   }
   persistState(room, state, "시청자 투표", auctionStatusFor(state.phase));
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// 후원 효과 (1부·2부 공통, donationEffect.js) — 관리자 수동 "+1" 버튼(주 안전망)과
+// SOOP(숲) 채팅 자동 감지(보조 수단, soopConnector.js)를 모두 이 방식으로 반영합니다.
+// 두 경로 모두 최종적으로는 같은 addDonation() 함수를 호출하므로 동작이 완전히 동일합니다.
+// 복수 스트리머 협업 방송에서는 참가자(playerId)마다 완전히 독립된 후원 집계를 가지므로,
+// 모든 경로에 playerId가 필수입니다 — 스트리머 B의 후원은 스트리머 B의 참가자 ID로만 반영됩니다.
+
+// game_mode에 맞는 모듈의 addDonation을 호출하고 저장까지 한 번에 처리하는 공용 헬퍼.
+// SOOP 콜백처럼 요청-응답 사이클 밖에서(비동기로) 호출될 수도 있으므로 room을 새로 읽어서 씁니다.
+function applyDonation(roomCode, playerId, count, source) {
+  const room = getRoom(roomCode);
+  if (!room) return null;
+  const state = JSON.parse(room.state_json);
+  const fired =
+    room.game_mode === "auction"
+      ? Game2.addDonation(state, playerId, count, now(), source)
+      : Game.addDonation(state, playerId, count, now(), source);
+  const status = room.game_mode === "auction" ? auctionStatusFor(state.phase) : room.status;
+  const newVersion = persistState(room, state, `후원 +${count}(${source}, ${playerId})`, status);
+  return { newVersion, state, fired };
+}
+
+// 관리자 수동 "+1"(또는 임의 개수) 버튼. count를 생략하면 1개로 처리합니다. playerId로
+// 어느 참가자(스트리머)의 채널에 들어온 후원인지 반드시 지정해야 합니다.
+app.post("/api/rooms/:code/admin/donation", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+
+  const playerId = String(req.body?.playerId || "").trim();
+  if (!playerId) return res.status(400).json({ ok: false, error: "참가자(playerId)를 지정해주세요." });
+  const player = getPlayers(room.code).find((p) => p.id === playerId);
+  if (!player) return res.status(400).json({ ok: false, error: "이 방의 참가자가 아닙니다." });
+
+  let count = Number(req.body?.count);
+  if (!Number.isFinite(count) || count <= 0) count = 1;
+  count = Math.min(Math.floor(count), 10000); // 실수로 큰 값을 넣어도 폭주하지 않도록 안전 상한
+
+  const result = applyDonation(room.code, playerId, count, "관리자 수동");
+  if (!result) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  const responseState =
+    room.game_mode === "auction" ? Game2.serializeForClient(result.state, { forAdmin: true }) : result.state;
+  res.json({ ok: true, stateVersion: result.newVersion, state: responseState, fired: result.fired });
+});
+
+// 후원 효과 전체 켜짐/꺼짐 스위치. 꺼도 누적된 후원 개수/보정률 기록은 그대로 남고(끄기 전에
+// 쌓인 값도 그대로), 단지 가격 계산에 반영되지 않을 뿐입니다(donationRate가 0을 돌려줌).
+// 다시 켜면 꺼져 있던 동안 쌓인 값까지 포함해서 바로 반영됩니다.
+app.post("/api/rooms/:code/admin/donation-toggle", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+
+  const enabled = !!req.body?.enabled;
+  const state = JSON.parse(room.state_json);
+  state.donationEnabled = enabled;
+  if (!Array.isArray(state.log)) state.log = [];
+  state.log.push(`[후원 효과] 방 전체 ${enabled ? "켜짐" : "꺼짐"}으로 변경됨(관리자)`);
+  const status = room.game_mode === "auction" ? auctionStatusFor(state.phase) : room.status;
+  const newVersion = persistState(room, state, `후원 효과 ${enabled ? "켜짐" : "꺼짐"}`, status);
+  const responseState = room.game_mode === "auction" ? Game2.serializeForClient(state, { forAdmin: true }) : state;
+  res.json({ ok: true, stateVersion: newVersion, state: responseState, donationEnabled: enabled });
+});
+
+// SOOP(숲) 자동 감지 연결 시작. BJ 아이디만 있으면 로그인 없이 연결을 시도합니다.
+// playerId로 이 연결이 어느 참가자(스트리머)의 채널인지 지정합니다 — 복수 스트리머 협업
+// 방송에서는 참가자마다 각자 자기 BJ 아이디로 따로 연결해야 합니다. 실제 방송 전에 미리
+// 눌러서 연결이 잘 되는지 리허설로 확인해두는 걸 권장합니다 — 비공식 방식이라 연결에
+// 실패해도 관리자 수동 +1 버튼은 항상 그대로 사용할 수 있습니다.
+app.post("/api/rooms/:code/admin/soop/connect", async (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+
+  const playerId = String(req.body?.playerId || "").trim();
+  if (!playerId) return res.status(400).json({ ok: false, error: "참가자(playerId)를 지정해주세요." });
+  const player = getPlayers(room.code).find((p) => p.id === playerId);
+  if (!player) return res.status(400).json({ ok: false, error: "이 방의 참가자가 아닙니다." });
+
+  const streamerId = String(req.body?.streamerId || "").trim();
+  if (!streamerId) return res.status(400).json({ ok: false, error: "SOOP(숲) BJ 아이디를 입력해주세요." });
+
+  try {
+    const status = await SoopConnector.start(
+      room.code,
+      playerId,
+      streamerId,
+      (count) => {
+        try {
+          applyDonation(room.code, playerId, count, "SOOP 자동감지");
+        } catch (e) {
+          console.error(`[soop:${room.code}:${playerId}] 후원 반영 중 오류:`, e);
+        }
+      },
+      (msg) => console.log(`[soop:${room.code}:${playerId}] ${msg}`)
+    );
+    res.json({ ok: true, status });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: "SOOP 연결에 실패했습니다: " + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+app.post("/api/rooms/:code/admin/soop/disconnect", async (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  const playerId = String(req.body?.playerId || "").trim();
+  if (!playerId) return res.status(400).json({ ok: false, error: "참가자(playerId)를 지정해주세요." });
+  await SoopConnector.stop(room.code, playerId);
+  res.json({ ok: true, status: SoopConnector.getStatus(room.code, playerId) });
+});
+
+app.get("/api/rooms/:code/admin/soop/status", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  const playerId = String(req.query?.playerId || "").trim();
+  if (playerId) {
+    return res.json({ ok: true, status: SoopConnector.getStatus(room.code, playerId) });
+  }
+  // playerId를 안 넘기면 이 방 전체 참가자의 연결 상태를 한 번에 돌려줍니다.
+  res.json({ ok: true, statuses: SoopConnector.getStatusesForRoom(room.code) });
 });
 
 // 비상 강제 종료: 방송 시간이 다 되어 "최후 1인 생존"을 기다릴 수 없을 때, 지금 이 순간의
