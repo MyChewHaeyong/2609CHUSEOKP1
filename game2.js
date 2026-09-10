@@ -9,6 +9,8 @@
 //   - 14품목 종료 후 관리자가 준비되면 투표를 열고(5분 고정, 조기 종료 가능), 링크로 접속한
 //     시청자가 각 참가자의 완성된 차례상에 투표 → 득표순 최종 순위
 //   - 실제 경품은 사람 참가자에게만(관리자/서버가 순위 발표 시 BOT은 별도 표시)
+//   - 한 참가자가 낙찰받을 수 있는 품목은 최대 5개(MAX_ITEMS_PER_PLAYER). 5개를 다 채우지
+//     않아도 되며, 참가자 화면에 항상 "X / 5" 형태로 현재 몇 개를 낙찰받았는지 보여줍니다.
 "use strict";
 const crypto = require("crypto");
 
@@ -33,6 +35,11 @@ const START_PRICE = 70000;
 const BID_ROUND_MS = 5 * 60 * 1000; // 품목당 5분
 const VOTE_MS = 5 * 60 * 1000; // 투표 5분
 const BID_INCREMENTS = [10000, 30000, 50000];
+// 한 참가자가 낙찰받을 수 있는 품목 수 상한(규칙 추가) — 14개 품목을 소수가 독식하지 못하도록
+// 사람/BOT 구분 없이 동일하게 적용합니다. 5개를 다 채우지 않아도 되고, 5개에 도달하면 그
+// 참가자는 이후 라운드에서 더 이상 입찰할 수 없습니다(포기와 마찬가지로 조기 낙찰 판단에서는
+// "이미 결정된 사람"으로 취급).
+const MAX_ITEMS_PER_PLAYER = 5;
 
 // 1부 결산 등수별 2부 시드머니(팔도마블 규칙서 "결산 코드" 절 기준)
 const SEED_BY_RANK = { 1: 1250000, 2: 1100000, 3: 950000, 4: 800000 };
@@ -109,7 +116,11 @@ function maybeResolveEarly(state, now) {
   if (state.phase !== "bidding") return false;
   const leaderId = state.currentBid ? state.currentBid.bidderId : null;
   const undecidedHumans = Object.values(state.players).filter(
-    (p) => !p.isBot && p.id !== leaderId && !state.passedThisRound.includes(p.id)
+    (p) =>
+      !p.isBot &&
+      p.id !== leaderId &&
+      !state.passedThisRound.includes(p.id) &&
+      p.wonItems.length < MAX_ITEMS_PER_PLAYER // 이미 5개를 채운 사람은 어차피 입찰할 수 없으므로 "결정 완료"로 취급
   );
   if (undecidedHumans.length > 0) return false;
   // 사람이 아예 없는 방(전원 BOT)에서는 조기 낙찰 대상이 아님 — 포기를 누를 사람이 없으므로
@@ -182,6 +193,9 @@ function placeBid(state, playerId, amount, now) {
   if (state.passedThisRound.includes(playerId)) {
     throw new Error("이번 품목은 이미 포기하셨습니다. 다음 품목부터 다시 참여할 수 있어요.");
   }
+  if (p.wonItems.length >= MAX_ITEMS_PER_PLAYER) {
+    throw new Error(`이미 최대 ${MAX_ITEMS_PER_PLAYER}개 품목을 낙찰받아 더 이상 입찰할 수 없습니다.`);
+  }
   amount = Number(amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("입찰 금액이 올바르지 않습니다.");
 
@@ -226,7 +240,12 @@ function maybeBotBid(state, now) {
 
   const bots = state.turnOrder
     .map((id) => state.players[id])
-    .filter((p) => p.isBot && (!state.currentBid || state.currentBid.bidderId !== p.id));
+    .filter(
+      (p) =>
+        p.isBot &&
+        p.wonItems.length < MAX_ITEMS_PER_PLAYER &&
+        (!state.currentBid || state.currentBid.bidderId !== p.id)
+    );
 
   let bid = false;
   for (const bot of shuffleArray(bots)) {
@@ -333,6 +352,7 @@ function serializeForClient(state, opts) {
       itemResults: [],
       remainingCount: ITEMS.length,
       totalItems: ITEMS.length,
+      maxItemsPerPlayer: MAX_ITEMS_PER_PLAYER,
       players: {},
       log: [],
     };
@@ -355,6 +375,7 @@ function serializeForClient(state, opts) {
     itemResults: state.itemResults,
     remainingCount: ITEMS.length - state.itemResults.length,
     totalItems: ITEMS.length,
+    maxItemsPerPlayer: MAX_ITEMS_PER_PLAYER,
     players,
     log: state.log.slice(-30),
   };
@@ -393,6 +414,7 @@ module.exports = {
   BID_ROUND_MS,
   VOTE_MS,
   BID_INCREMENTS,
+  MAX_ITEMS_PER_PLAYER,
   SEED_BY_RANK,
   SEED_DEFAULT,
   initState,
