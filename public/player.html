@@ -505,7 +505,7 @@
   function renderMyStats(state) {
     const me = state.players[session.playerId];
     if (!me) { $("myCash").textContent = "-"; return; }
-    $("myCash").textContent = fmt(me.cash) + " 엽전";
+    $("myCash").textContent = fmt(me.cash) + " 원";
     $("myPos").textContent = TILES[me.position] ? TILES[me.position].name : "-";
     $("mySongpyeon").textContent = (me.songpyeon || 0) + "개";
     $("myItems").textContent = me.items && me.items.length
@@ -533,7 +533,7 @@
       const tile = TILES[me.position];
       const card = document.createElement("div");
       card.className = "tilecard";
-      card.innerHTML = '<div class="tname">' + tile.name + '</div><div class="tinfo">구매가 ' + fmt(tile.price) + " 엽전 · 보유 자금 " + fmt(me.cash) + " 엽전</div>";
+      card.innerHTML = '<div class="tname">' + tile.name + '</div><div class="tinfo">구매가 ' + fmt(tile.price) + " 원 · 보유 자금 " + fmt(me.cash) + " 원</div>";
       area.appendChild(card);
       const row = document.createElement("div");
       row.className = "btnrow";
@@ -579,7 +579,7 @@
     } else if (ev.type === "shop") {
       const card = document.createElement("div");
       card.className = "tilecard";
-      card.innerHTML = '<div class="tname">달토끼 상점</div><div class="tinfo">15,000 엽전으로 아이템 하나를 살 수 있어요.</div>';
+      card.innerHTML = '<div class="tname">달토끼 상점</div><div class="tinfo">15,000 원으로 아이템 하나를 살 수 있어요.</div>';
       wrap.appendChild(card);
       ["toll-free", "reroll", "half-build"].forEach((item) => {
         wrap.appendChild(makeBtn(ITEM_LABEL[item] + " 구매", () => sendAction("resolve-event", { choice: item })));
@@ -700,7 +700,7 @@
     let bodyHtml = "";
     if (tile.type === "city") {
       const prop = state.properties[pos];
-      const priceLine = "구매가 " + fmt(tile.price) + " 엽전";
+      const priceLine = "구매가 " + fmt(tile.price) + " 원";
       if (prop) {
         const ownerP = state.players[prop.ownerId];
         const buildLabel = prop.building === "hotel" ? " · 호텔" : prop.building === "villa" ? " · 별장" : "";
