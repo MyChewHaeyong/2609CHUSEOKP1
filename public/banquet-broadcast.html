@@ -153,7 +153,7 @@
     el.classList.toggle("hot", s <= 15);
   }
 
-  function renderTables(players, statePlayers) {
+  function renderTables(players, statePlayers, maxItems) {
     const grid = document.getElementById("tableGrid");
     grid.innerHTML = "";
     players.forEach((p) => {
@@ -165,7 +165,8 @@
       card.innerHTML =
         '<div class="head"><div class="name-avatar">' + avatarHtml(p.characterId, 30) +
         '<span class="name"><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' + p.name + (p.isBot ? " · BOT" : "") + "</span></div>" +
-        '<div class="cash">' + fmt(sp.cash) + " 원</div></div>" +
+        '<div style="text-align:right"><div class="cash">' + fmt(sp.cash) + " 원</div>" +
+        '<div style="font-size:11.5px; color:#9d97c2">낙찰 ' + items.length + " / " + maxItems + "</div></div></div>" +
         '<div class="sang">' +
         (items.length ? items.map(sangCell).join("") : '<div class="empty-hint">아직 낙찰받은 품목 없음</div>') +
         "</div>";
@@ -173,7 +174,7 @@
     });
   }
 
-  function renderResults(results, players, statePlayers) {
+  function renderResults(results, players, statePlayers, maxItems) {
     const nameOf = (id) => { const p = players.find((x) => x.id === id); return p ? p : { name: id }; };
     const grid = document.getElementById("rankGrid");
     grid.innerHTML = "";
@@ -187,7 +188,7 @@
         '<div class="rankbadge">' + r.rank + "위" + (r.rank === 1 ? " 🏆" : "") + "</div>" +
         '<div class="name-avatar" style="justify-content:center; margin-bottom:6px">' + avatarHtml(p.characterId, 34) +
         '<span class="rname">' + p.name + "</span></div>" +
-        '<div class="rvotes">득표 ' + r.votes + "표</div>" +
+        '<div class="rvotes">득표 ' + r.votes + "표 · 낙찰 " + items.length + " / " + maxItems + "</div>" +
         '<div class="sang">' +
         (items.length ? items.map(sangCell).join("") : '<div class="empty-hint">낙찰받은 품목 없음</div>') +
         "</div>";
@@ -245,11 +246,12 @@
         renderCountdown("voteTimer", st.voteDeadlineAt, data.serverTime);
       }
 
+      const maxItems = st.maxItemsPerPlayer || 5;
       if (data.status !== "waiting" && st.phase !== "ended") {
-        renderTables(players, st.players || {});
+        renderTables(players, st.players || {}, maxItems);
       }
       if (st.phase === "ended" && st.results) {
-        renderResults(st.results, players, st.players || {});
+        renderResults(st.results, players, st.players || {}, maxItems);
       }
     } catch (e) {
       /* 방송 화면은 조용히 재시도만 함 */
