@@ -58,6 +58,17 @@
     <button id="refreshBtn" class="secondary" style="margin-top:10px">지금 새로고침</button>
   </div>
 
+  <div class="panel">
+    <h2>후원 효과 <span class="tag">1·2부 공통 · 참가자별 독립</span></h2>
+    <p class="hint">후원(별풍선) 누적 개수가 정확히 30개/31개, 300개/301개에 도달할 때마다 무작위 가격 보정 효과가 발동해 계속 누적됩니다(최대 ±50%). 1부는 통행료(땅 주인이 받는 금액)에만, 2부는 낙찰가(낙찰자가 내는 금액)에만 적용됩니다. 복수 스트리머가 함께 참여해도 각자의 후원은 본인에게만 반영되고(스트리머 B의 후원 → 스트리머 B의 통행료/낙찰가만 영향), 사람 참가자에게만 적용됩니다(BOT은 항상 효과 없음). 1부·2부도 서로 완전히 독립적으로 집계됩니다.</p>
+    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:4px">
+      <input id="donationEnabledToggle" type="checkbox" style="width:auto; margin:0" />
+      <span style="color:var(--cream)">후원 효과 전체 켜짐 (끄면 누적 기록은 유지, 가격에만 미반영)</span>
+    </label>
+    <div id="donationToggleMsg" class="msg"></div>
+    <div id="donationPlayerList" style="margin-top:6px"></div>
+  </div>
+
   <!-- 1부 팔도마블 전용: 게임 시작 -->
   <div class="panel hidden" id="startPanel">
     <h2>게임 시작 <span class="tag">1부 팔도마블</span></h2>
@@ -195,6 +206,105 @@
     if (m === "paldomarble") return "1부 팔도마블";
     return m || "-";
   }
+  // --- 후원 효과 (1·2부 공통, 참가자별 독립) ---------------------------------------
+  // 참가자(사람만) 목록이 바뀔 때만 DOM을 다시 그리고, 안 바뀌면 그대로 둡니다(입력칸
+  // 타이핑 중 포커스가 날아가는 걸 막기 위한 패턴 — renderBotNameInputs와 동일한 이유).
+  let renderedDonationPlayerIds = null;
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  function renderDonationPlayerShells(players) {
+    const humans = (players || []).filter((p) => !p.isBot);
+    const idsKey = humans.map((p) => p.id).join(",");
+    if (idsKey === renderedDonationPlayerIds) return;
+    renderedDonationPlayerIds = idsKey;
+
+    const container = $("donationPlayerList");
+    container.innerHTML = "";
+    if (!humans.length) {
+      container.innerHTML = '<p class="hint">참가자가 아직 없습니다(사람 참가자만 후원 효과 대상입니다).</p>';
+      return;
+    }
+    humans.forEach((p) => {
+      const box = document.createElement("div");
+      box.style.cssText = "margin-top:12px; padding-top:12px; border-top:1px solid var(--line)";
+      box.innerHTML =
+        '<label style="margin-bottom:2px; color:var(--gold)">' + escapeHtml(p.name) + ' <span style="color:#9d97c2">(#' + (p.seat + 1) + ")</span></label>" +
+        '<div id="donationSummary_' + p.id + '" class="msg" style="color:var(--cream); font-size:14px">누적 후원 0개 · 누적 보정률 0.0%</div>' +
+        '<div id="donationHistory_' + p.id + '" class="msg" style="margin-top:2px"></div>' +
+        '<div style="display:flex; gap:8px; align-items:center; margin:8px 0">' +
+        '<input id="donationCount_' + p.id + '" type="number" min="1" step="1" value="1" style="max-width:110px; margin-bottom:0" />' +
+        '<button type="button" data-pid="' + p.id + '" class="donationAddBtn" style="margin-bottom:0">입력한 개수만큼 추가</button>' +
+        '<button type="button" data-pid="' + p.id + '" class="donationPlusOneBtn secondary" style="margin-bottom:0">+1</button>' +
+        "</div>" +
+        '<div id="donationMsg_' + p.id + '" class="msg"></div>' +
+        '<div style="margin-top:8px">' +
+        '<label style="margin-bottom:4px">SOOP(숲) 자동 감지 <span style="color:#9d97c2">(비공식 · 보조 수단 — 방송 전 미리 연결해서 확인해보세요)</span></label>' +
+        '<div style="display:flex; gap:8px; align-items:center">' +
+        '<input id="soopStreamerId_' + p.id + '" placeholder="BJ 아이디" style="margin-bottom:0" />' +
+        '<button type="button" data-pid="' + p.id + '" class="soopConnectBtn" style="margin-bottom:0">연결</button>' +
+        '<button type="button" data-pid="' + p.id + '" class="soopDisconnectBtn secondary" style="margin-bottom:0">연결 해제</button>' +
+        "</div>" +
+        '<div id="soopStatusLine_' + p.id + '" class="msg"></div>' +
+        "</div>";
+      container.appendChild(box);
+    });
+    container.querySelectorAll(".donationAddBtn").forEach((btn) =>
+      btn.addEventListener("click", () => submitDonation(btn.dataset.pid, $("donationCount_" + btn.dataset.pid).value))
+    );
+    container.querySelectorAll(".donationPlusOneBtn").forEach((btn) =>
+      btn.addEventListener("click", () => submitDonation(btn.dataset.pid, 1))
+    );
+    container.querySelectorAll(".soopConnectBtn").forEach((btn) => btn.addEventListener("click", () => connectSoop(btn.dataset.pid)));
+    container.querySelectorAll(".soopDisconnectBtn").forEach((btn) => btn.addEventListener("click", () => disconnectSoop(btn.dataset.pid)));
+  }
+
+  // de: { count, cumulativeRate, cumulativeRatePct, history } — 없으면(아직 후원 없음) 0으로 표시.
+  function renderDonationSummaryFor(pid, de) {
+    de = de || { count: 0, cumulativeRate: 0, cumulativeRatePct: 0, history: [] };
+    const pct = de.cumulativeRatePct != null ? de.cumulativeRatePct : Math.round((de.cumulativeRate || 0) * 1000) / 10;
+    const favorText = pct > 0 ? " (유리)" : pct < 0 ? " (불리)" : "";
+    const summaryEl = $("donationSummary_" + pid);
+    if (summaryEl) {
+      summaryEl.textContent =
+        "누적 후원 " + (de.count || 0) + "개 · 누적 보정률 " + (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%" + favorText;
+    }
+    const hist = de.history || [];
+    const histEl = $("donationHistory_" + pid);
+    if (histEl) {
+      histEl.textContent = hist.length
+        ? "최근 발동: " +
+          hist
+            .slice(-5)
+            .map((h) => h.atCount + "개 도달 → " + (h.deltaPct >= 0 ? "+" : "") + h.deltaPct.toFixed(1) + "%")
+            .join(" · ")
+        : "아직 발동한 효과가 없습니다 (30/31/300/301개에서 발동).";
+    }
+  }
+
+  function soopStatusText(status) {
+    if (!status) return { text: "상태: 대기(idle)", err: false };
+    const stateLabel =
+      { idle: "대기", resolving: "방송 정보 조회 중", connecting: "연결 중", connected: "연결됨", reconnecting: "재연결 중", closed: "종료됨" }[
+        status.state
+      ] || status.state;
+    let text = "상태: " + stateLabel;
+    if (status.streamerId) text += " (BJ: " + status.streamerId + ")";
+    if (status.lastError) text += " · 최근 오류: " + status.lastError;
+    return { text, err: !status.connected && !!status.lastError };
+  }
+  function renderSoopStatusFor(pid, status) {
+    const el = $("soopStatusLine_" + pid);
+    if (!el) return;
+    const { text, err } = soopStatusText(status);
+    el.textContent = text;
+    el.classList.toggle("err", err);
+  }
+  function renderSoopStatusesFor(players, statuses) {
+    statuses = statuses || {};
+    (players || []).filter((p) => !p.isBot).forEach((p) => renderSoopStatusFor(p.id, statuses[p.id]));
+  }
+
   function renderAuctionCountdown(el, deadlineAt, serverTime) {
     if (!deadlineAt) { el.textContent = "--:--"; return; }
     const remainMs = Math.max(0, deadlineAt - serverTime);
@@ -251,6 +361,15 @@
       lastPlayers = data.players;
       applyGameModeVisibility();
       renderPlayerSelect(data.players);
+
+      // 후원 효과: 1·2부 공통, 참가자별. /admin의 원본 state(JSON)에는 게임 시작 전이든
+      // 후든 항상 donationEffects(참가자별 맵)/donationEnabled 필드가 그대로 들어있으므로
+      // 게임모드·진행 단계와 무관하게 여기서 한 번에 처리합니다.
+      renderDonationPlayerShells(data.players);
+      $("donationEnabledToggle").checked = data.room.state.donationEnabled !== false;
+      const deMap = data.room.state.donationEffects || {};
+      data.players.filter((p) => !p.isBot).forEach((p) => renderDonationSummaryFor(p.id, deMap[p.id]));
+      renderSoopStatusesFor(data.players, data.soopStatuses);
 
       if (currentGameMode === "auction") {
         await refreshAuction(code, key, data.players);
@@ -472,6 +591,97 @@
     } catch (e) {
       $("forceEndMsg").textContent = "강제 종료 실패: " + e.message;
       $("forceEndMsg").classList.add("err");
+    }
+  });
+
+  // --- 후원 효과 (1·2부 공통, 참가자별 독립) ---
+  async function submitDonation(pid, count) {
+    const { code, key } = creds();
+    const msgEl = $("donationMsg_" + pid);
+    if (!code || !key) { if (msgEl) msgEl.textContent = "먼저 방을 불러와주세요."; return; }
+    count = Math.max(1, Math.floor(Number(count)) || 1);
+    try {
+      const data = await api("/api/rooms/" + code + "/admin/donation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key, playerId: pid, count }),
+      });
+      const fired = data.fired || [];
+      if (msgEl) {
+        msgEl.textContent = "후원 " + count + "개 추가함" + (fired.length ? " · 이번에 " + fired.length + "번 발동!" : "");
+        msgEl.classList.remove("err");
+      }
+      refresh();
+    } catch (e) {
+      if (msgEl) {
+        msgEl.textContent = "후원 추가 실패: " + e.message;
+        msgEl.classList.add("err");
+      }
+    }
+  }
+
+  async function connectSoop(pid) {
+    const { code, key } = creds();
+    const input = $("soopStreamerId_" + pid);
+    const streamerId = input ? input.value.trim() : "";
+    const statusEl = $("soopStatusLine_" + pid);
+    if (!code || !key) { if (statusEl) statusEl.textContent = "먼저 방을 불러와주세요."; return; }
+    if (!streamerId) { if (statusEl) statusEl.textContent = "SOOP(숲) BJ 아이디를 입력해주세요."; return; }
+    if (statusEl) { statusEl.textContent = "연결 시도 중..."; statusEl.classList.remove("err"); }
+    try {
+      const data = await api("/api/rooms/" + code + "/admin/soop/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key, playerId: pid, streamerId }),
+      });
+      renderSoopStatusFor(pid, data.status);
+    } catch (e) {
+      if (statusEl) {
+        statusEl.textContent = "연결 실패: " + e.message;
+        statusEl.classList.add("err");
+      }
+    }
+  }
+
+  async function disconnectSoop(pid) {
+    const { code, key } = creds();
+    const statusEl = $("soopStatusLine_" + pid);
+    try {
+      const data = await api("/api/rooms/" + code + "/admin/soop/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key, playerId: pid }),
+      });
+      renderSoopStatusFor(pid, data.status);
+    } catch (e) {
+      if (statusEl) {
+        statusEl.textContent = "연결 해제 실패: " + e.message;
+        statusEl.classList.add("err");
+      }
+    }
+  }
+
+  $("donationEnabledToggle").addEventListener("change", async () => {
+    const { code, key } = creds();
+    const enabled = $("donationEnabledToggle").checked;
+    if (!code || !key) {
+      $("donationEnabledToggle").checked = !enabled;
+      $("donationToggleMsg").textContent = "먼저 방을 불러와주세요.";
+      return;
+    }
+    try {
+      await api("/api/rooms/" + code + "/admin/donation-toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key, enabled }),
+      });
+      $("donationToggleMsg").textContent = "후원 효과를 " + (enabled ? "켰습니다." : "껐습니다(누적 기록은 유지됩니다).");
+      $("donationToggleMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("donationEnabledToggle").checked = !enabled; // 실패했으니 체크 상태를 되돌림
+      $("donationToggleMsg").textContent = "변경 실패: " + e.message;
+      $("donationToggleMsg").classList.add("err");
     }
   });
 
