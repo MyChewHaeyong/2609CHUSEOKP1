@@ -120,6 +120,23 @@ function tollFor(state, pos, now) {
   return amount;
 }
 
+// tollFor()와 완전히 동일한 계산이되, 후원 효과 보정만 적용하지 않은 "원래 통행료"입니다.
+// 참가자 화면에서 칸을 클릭했을 때 "원가 vs 후원 효과 반영가"를 나란히 보여주기 위한
+// 용도로만 씁니다(실제 청구/정산에는 항상 tollFor()만 사용됨).
+function tollForPlain(state, pos, now) {
+  const tile = TILES[pos];
+  const prop = state.properties[pos] || { ownerId: null, building: "none" };
+  const mult = TOLL_MULT[tile.region];
+  let tier;
+  if (prop.building === "hotel") tier = 0.6;
+  else if (prop.building === "villa") tier = 0.3;
+  else if (cityTilesOfRegion(tile.region).length > 1 && ownsRegion(state, prop.ownerId, tile.region)) tier = 0.2;
+  else tier = 0.1;
+  let amount = Math.round(tile.price * tier * mult);
+  if (state.gameStartedAt && now - state.gameStartedAt > TOLL_DOUBLE_MS) amount *= 2;
+  return amount;
+}
+
 function stepSellValue(state, tile, fromLevel) {
   // 매각환급금은 후원 효과 적용 범위에서 제외됩니다(통행료만 적용 — 사용자 확정 사항).
   return fromLevel === "hotel" || fromLevel === "villa" ? Math.round(tile.price * 0.25) : Math.round(tile.price * 0.5);
@@ -702,6 +719,7 @@ module.exports = {
   applyPlayerAction,
   runBotsIfNeeded,
   tollFor,
+  tollForPlain,
   ownsRegion,
   forceEndGame,
   computeFinalRanking,
