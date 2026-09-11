@@ -129,6 +129,22 @@ function publicPlayer(p) {
     connected: now() - p.last_seen < 15000,
   };
 }
+// 1부(팔도마블) 화면에 "지금 이 땅을 밟으면 통행료가 얼마인지" 미리 보여주기 위한 헬퍼.
+// game.js의 tollFor()를 그대로 재사용해서 계산하므로(클라이언트에서 같은 공식을 따로
+// 베껴 만들지 않음), 건물 단계/권역 완성/90분 인상/후원 효과가 전부 실제 청구액과 항상
+// 정확히 일치합니다. 주인이 있는 칸만 포함하며, { [칸 번호]: 통행료 } 형태입니다.
+function tollPreviewFor(state, t) {
+  const preview = {};
+  if (!state || !state.properties) return preview;
+  Object.keys(state.properties).forEach((posStr) => {
+    const prop = state.properties[posStr];
+    if (!prop || !prop.ownerId) return;
+    const pos = Number(posStr);
+    preview[pos] = Game.tollFor(state, pos, t);
+  });
+  return preview;
+}
+
 // 2부(만찬경매) state.phase를 rooms.status 컬럼(waiting/playing/ended)으로 매핑.
 // 1부의 undo 버그 수정 때와 같은 이유로, 상태를 저장할 때마다 항상 이 매핑을 같이 갱신해야
 // join 가능 여부(waiting 체크) 등이 화면과 어긋나지 않습니다.
@@ -279,13 +295,15 @@ app.get("/api/rooms/:code/state", (req, res) => {
     });
   }
 
+  const part1State = JSON.parse(room.state_json);
   res.json({
     ok: true,
     roomCode: room.code,
     gameMode: room.game_mode,
     status: room.status,
     stateVersion: room.state_version,
-    state: JSON.parse(room.state_json),
+    state: part1State,
+    tolls: tollPreviewFor(part1State, now()),
     players: getPlayers(room.code).map(publicPlayer),
     serverTime: now(),
   });
@@ -380,9 +398,13 @@ function applyAction(room, player, type, payload) {
     // 2부는 서버 내부 상태(경매 순서 등 비밀 정보)를 그대로 돌려주면 안 되므로, 응답에는
     // 항상 마스킹된 클라이언트용 상태만 담습니다.
     const responseState = room.game_mode === "auction" ? Game2.serializeForClient(state, { forAdmin: false }) : state;
-    return { stateVersion: newVersion, state: responseState };
+    const result = { stateVersion: newVersion, state: responseState };
+    if (room.game_mode === "paldomarble") result.tolls = tollPreviewFor(state, now());
+    return result;
   }
-  return { stateVersion: room.state_version, state };
+  const result = { stateVersion: room.state_version, state };
+  if (room.game_mode === "paldomarble") result.tolls = tollPreviewFor(state, now());
+  return result;
 }
 
 // ---------------------------------------------------------------------------
