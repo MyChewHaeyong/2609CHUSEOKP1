@@ -153,28 +153,55 @@
     el.classList.toggle("hot", s <= 15);
   }
 
+  // 플레이어별 카드 DOM을 재사용합니다(폴링마다 통째로 새로 만들지 않음). 아바타/이미지가
+  // 없는 품목은 <img>가 매초 새로 생성되면 브라우저가 같은 404 이미지를 초마다 다시 요청하게
+  // 되어, 그게 쌓이면 실제 입찰/상태 갱신 요청이 뒤에서 밀려 화면이 느려 보일 수 있습니다.
+  // 그래서 카드 껍데기(아바타 포함)는 처음 한 번만 만들고, 이후에는 자금/낙찰 개수/품목
+  // 이미지 칸처럼 실제로 바뀌는 부분만 갱신합니다.
+  const tableCardEls = {};
+  let lastResultThumbSlug = null;
   function renderTables(players, statePlayers, maxItems) {
     const grid = document.getElementById("tableGrid");
-    grid.innerHTML = "";
     players.forEach((p) => {
       const sp = statePlayers[p.id] || {};
       const items = sp.wonItems || [];
-      const card = document.createElement("div");
-      card.className = "tablecard";
-      card.style.borderTopColor = tokenColor(p);
-      card.innerHTML =
-        '<div class="head"><div class="name-avatar">' + avatarHtml(p.characterId, 30) +
-        '<span class="name"><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' + p.name + (p.isBot ? " · BOT" : "") + "</span></div>" +
-        '<div style="text-align:right"><div class="cash">' + fmt(sp.cash) + " 원</div>" +
-        '<div style="font-size:11.5px; color:#9d97c2">낙찰 ' + items.length + " / " + maxItems + "</div></div></div>" +
-        '<div class="sang">' +
-        (items.length ? items.map(sangCell).join("") : '<div class="empty-hint">아직 낙찰받은 품목 없음</div>') +
-        "</div>";
-      grid.appendChild(card);
+      let entry = tableCardEls[p.id];
+      if (!entry) {
+        const card = document.createElement("div");
+        card.className = "tablecard";
+        card.style.borderTopColor = tokenColor(p);
+        card.innerHTML =
+          '<div class="head"><div class="name-avatar">' + avatarHtml(p.characterId, 30) +
+          '<span class="name"><span class="dot" id="tDot_' + p.id + '"></span>' + p.name + (p.isBot ? " · BOT" : "") + "</span></div>" +
+          '<div style="text-align:right"><div class="cash" id="tCash_' + p.id + '"></div>' +
+          '<div style="font-size:11.5px; color:#9d97c2" id="tCount_' + p.id + '"></div></div></div>' +
+          '<div class="sang" id="tSang_' + p.id + '"></div>';
+        grid.appendChild(card);
+        entry = tableCardEls[p.id] = {
+          dotEl: document.getElementById("tDot_" + p.id),
+          cashEl: document.getElementById("tCash_" + p.id),
+          countEl: document.getElementById("tCount_" + p.id),
+          sangEl: document.getElementById("tSang_" + p.id),
+          lastItemCount: -1,
+        };
+      }
+      entry.dotEl.classList.toggle("on", !!(p.connected || p.isBot));
+      entry.cashEl.textContent = fmt(sp.cash) + " 원";
+      entry.countEl.textContent = "낙찰 " + items.length + " / " + maxItems;
+      if (items.length !== entry.lastItemCount) {
+        entry.sangEl.innerHTML = items.length ? items.map(sangCell).join("") : '<div class="empty-hint">아직 낙찰받은 품목 없음</div>';
+        entry.lastItemCount = items.length;
+      }
     });
   }
 
+  // 최종 결과는 "종료" 이후 바뀌지 않으므로, 화면에 이미 그려둔 것과 같으면 다시 그리지
+  // 않습니다(그렇지 않으면 결과 화면을 띄워둔 채로 초마다 이미지가 다시 요청됩니다).
+  let lastResultsSignature = null;
   function renderResults(results, players, statePlayers, maxItems) {
+    const signature = JSON.stringify(results.displayRanking.map((r) => [r.playerId, r.rank, r.votes]));
+    if (signature === lastResultsSignature) return;
+    lastResultsSignature = signature;
     const nameOf = (id) => { const p = players.find((x) => x.id === id); return p ? p : { name: id }; };
     const grid = document.getElementById("rankGrid");
     grid.innerHTML = "";
@@ -230,8 +257,13 @@
       if (st.phase === "round-result" && st.lastResult) {
         const r = st.lastResult;
         const statePlayers = st.players || {};
-        document.getElementById("resultThumb").innerHTML =
-          '<img src="/banquet/' + r.slug + '.png" alt="" onerror="this.classList.add(\'err\')" />';
+        // 같은 품목이 공개되어 있는 동안 폴링마다 <img>를 다시 만들면(=없는 이미지를 매초
+        // 재요청) 다른 요청이 밀릴 수 있으므로, 품목이 바뀌었을 때만 새로 그립니다.
+        if (lastResultThumbSlug !== r.slug) {
+          document.getElementById("resultThumb").innerHTML =
+            '<img src="/banquet/' + r.slug + '.png" alt="" onerror="this.classList.add(\'err\')" />';
+          lastResultThumbSlug = r.slug;
+        }
         document.getElementById("resultTitle").textContent = "공개! " + r.name;
         if (r.winnerId) {
           const w = statePlayers[r.winnerId];
