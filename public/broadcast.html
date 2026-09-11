@@ -100,6 +100,8 @@
 
   const REGION_COLOR = { cc:"#4E7D57", jl:"#B0602F", gs:"#385E92", sd:"#95315A", jj:"#1E7C70" };
   const TOKEN_COLORS = ["#D9A441", "#4E9F63", "#5B8DEF", "#C9598F"];
+  let lastCenterWhoKey = null; // "누구 차례" 아바타를 실제로 바뀔 때만 다시 그리기 위한 캐시
+  let lastRankingKey = null; // 최종 순위 표를 내용이 같으면 다시 그리지 않기 위한 캐시
 
   // player.html과 동일한 캐릭터 목록/아바타 표시 로직. 나중에 public/characters/char1~4.png를
   // 저장소에 올리면 시청자 화면에서도 자동으로 그 이미지가 적용됨(지금은 이모지로 대체 표시).
@@ -192,6 +194,38 @@
     });
   }
 
+  // 참가자 카드(아바타 포함)는 처음 한 번만 만들고, 이후 폴링에서는 연결 상태/파산 여부/
+  // 자금처럼 실제로 바뀌는 부분만 갱신합니다. 매초 통째로 다시 그리면 아바타 <img>가 매번
+  // 새로 생성되어, 방송 화면(시청자가 보는 화면)이 계속 깜빡이는 것처럼 보입니다.
+  const gridCardEls = {};
+  function renderGrid(players, statePlayers) {
+    const grid = document.getElementById("grid");
+    players.forEach((p) => {
+      const stateP = statePlayers ? statePlayers[p.id] : null;
+      let entry = gridCardEls[p.id];
+      if (!entry) {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.style.borderTopColor = tokenColor(p);
+        card.innerHTML =
+          avatarHtml(p.characterId, 44) +
+          '<div><div class="name"><span class="dot" id="gDot_' + p.id + '"></span>' + p.name + "</div>" +
+          '<div class="seat" id="gSeat_' + p.id + '"></div>' +
+          '<div class="cash" id="gCash_' + p.id + '"></div></div>';
+        grid.appendChild(card);
+        entry = gridCardEls[p.id] = {
+          dotEl: document.getElementById("gDot_" + p.id),
+          seatEl: document.getElementById("gSeat_" + p.id),
+          cashEl: document.getElementById("gCash_" + p.id),
+        };
+      }
+      entry.dotEl.classList.toggle("on", !!(p.connected || p.isBot));
+      entry.seatEl.textContent = (p.isBot ? "BOT · " : "") + "#" + (p.seat + 1) + "번" + (stateP && stateP.bankrupt ? " · 파산" : "");
+      entry.cashEl.style.display = stateP ? "" : "none";
+      if (stateP) entry.cashEl.textContent = fmt(stateP.cash) + " 원";
+    });
+  }
+
   async function poll() {
     if (!roomCode) return;
     try {
@@ -199,20 +233,7 @@
       const data = await res.json();
       if (!data.ok) return;
 
-      const grid = document.getElementById("grid");
-      grid.innerHTML = "";
-      data.players.forEach((p) => {
-        const card = document.createElement("div");
-        card.className = "card";
-        const stateP = data.state && data.state.players ? data.state.players[p.id] : null;
-        card.style.borderTopColor = tokenColor(p);
-        card.innerHTML =
-          avatarHtml(p.characterId, 44) +
-          '<div><div class="name"><span class="dot ' + (p.connected || p.isBot ? "on" : "") + '"></span>' + p.name + "</div>" +
-          '<div class="seat">' + (p.isBot ? "BOT · " : "") + "#" + (p.seat + 1) + "번" + (stateP && stateP.bankrupt ? " · 파산" : "") + "</div>" +
-          (stateP ? '<div class="cash">' + fmt(stateP.cash) + " 원</div>" : "") + "</div>";
-        grid.appendChild(card);
-      });
+      renderGrid(data.players, data.state && data.state.players ? data.state.players : null);
 
       document.getElementById("phaseLine").textContent =
         data.status === "waiting" ? "참가자를 기다리는 중" : data.status === "ended" ? "게임 종료" : "게임 진행 중";
@@ -224,8 +245,19 @@
 
       if (!state || !state.players) {
         centerInner.innerHTML = "";
+        lastCenterWhoKey = null;
         return;
       }
+      // 가운데(누구 차례인지) 칸의 껍데기(who/what/timer 세 줄)는 한 번만 만들고, 이후에는
+      // 그 안의 각 부분만 갱신합니다 — 특히 아바타가 들어있는 who 줄은 실제로 차례가 바뀔
+      // 때만 다시 그려서, 매초 아바타 이미지가 깜빡이는 걸 막습니다.
+      if (!document.getElementById("cWho")) {
+        centerInner.innerHTML = '<div class="who" id="cWho"></div><div class="what" id="cWhat"></div><div id="cTimer"></div>';
+        lastCenterWhoKey = null;
+      }
+      const cWho = document.getElementById("cWho");
+      const cWhat = document.getElementById("cWhat");
+      const cTimer = document.getElementById("cTimer");
 
       let timerHtml = "";
       if (state.gameStartedAt) {
@@ -239,30 +271,44 @@
       }
 
       if (state.phase === "ended") {
-        centerInner.innerHTML = '<div class="who">게임 종료</div>';
+        if (lastCenterWhoKey !== "ended") {
+          cWho.textContent = "게임 종료";
+          lastCenterWhoKey = "ended";
+        }
+        cWhat.textContent = "";
+        cTimer.textContent = "";
         boardWrap.style.opacity = "0.4";
         rankWrap.style.display = "block";
-        const body = document.getElementById("rankBody");
-        body.innerHTML = "";
-        (state.finalRanking || []).forEach((r) => {
-          const tr = document.createElement("tr");
-          const charId = state.players[r.playerId] ? state.players[r.playerId].characterId : null;
-          tr.innerHTML =
-            "<td>" + r.rank + "위</td>" +
-            "<td><span class='name-avatar'>" + avatarHtml(charId, 26) + "<span>" + r.name + "</span></span></td>" +
-            "<td class='num'>" + fmt(r.netWorth) + "</td>";
-          body.appendChild(tr);
-        });
+        // 최종 순위는 종료 시점에 확정되면 더 바뀌지 않으므로, 내용이 같으면 다시 그리지
+        // 않습니다(계속 종료 화면을 띄워둔 채로 매초 아바타가 깜빡이는 걸 방지).
+        const rankKey = (state.finalRanking || []).map((r) => r.playerId + ":" + r.rank + ":" + r.netWorth).join(",");
+        if (rankKey !== lastRankingKey) {
+          lastRankingKey = rankKey;
+          const body = document.getElementById("rankBody");
+          body.innerHTML = "";
+          (state.finalRanking || []).forEach((r) => {
+            const tr = document.createElement("tr");
+            const charId = state.players[r.playerId] ? state.players[r.playerId].characterId : null;
+            tr.innerHTML =
+              "<td>" + r.rank + "위</td>" +
+              "<td><span class='name-avatar'>" + avatarHtml(charId, 26) + "<span>" + r.name + "</span></span></td>" +
+              "<td class='num'>" + fmt(r.netWorth) + "</td>";
+            body.appendChild(tr);
+          });
+        }
       } else {
         boardWrap.style.opacity = "1";
         rankWrap.style.display = "none";
         const cur = state.players[state.currentPlayerId];
-        centerInner.innerHTML =
-          (cur
-            ? '<div class="who"><span class="name-avatar">' + avatarHtml(cur.characterId, 28) + "<span>" + cur.name + "의 차례</span></span></div>"
-            : "") +
-          '<div class="what">' + turnPhaseLabel(state.turnPhase) + "</div>" +
-          timerHtml;
+        const whoKey = cur ? cur.characterId + "|" + cur.name : "none";
+        if (whoKey !== lastCenterWhoKey) {
+          cWho.innerHTML = cur
+            ? '<span class="name-avatar">' + avatarHtml(cur.characterId, 28) + "<span>" + cur.name + "의 차례</span></span>"
+            : "";
+          lastCenterWhoKey = whoKey;
+        }
+        cWhat.textContent = turnPhaseLabel(state.turnPhase);
+        cTimer.innerHTML = timerHtml;
 
         ensureTiles(boardWrap);
         const posToPlayers = {};
@@ -308,6 +354,7 @@
       "awaiting-roll": "주사위 굴리는 중",
       "awaiting-buy": "도시 구매 결정 중",
       "awaiting-event": "이벤트 처리 중",
+      "awaiting-toll": "통행료 면제권 사용 결정 중",
       "awaiting-endturn": "턴 마무리 중",
     }[tp] || "";
   }
