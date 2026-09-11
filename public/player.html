@@ -12,7 +12,7 @@
      보이지 않도록. 다만 이름/코드 입력, 내 정보, 버튼 같은 폼 성격의 패널은 너무 늘어나면
      오히려 보기 안 좋아서 .panel 기본값은 560px로 가운데 정렬해 두고, 보드판과 진행 기록처럼
      넓을수록 좋은 패널에만 .panel-wide를 붙여 폭 제한을 풀어줍니다. */
-  .wrap{max-width:1000px; margin:0 auto; padding:24px 14px 60px}
+  .wrap{max-width:1180px; margin:0 auto; padding:24px 14px 60px}
   h1{color:var(--gold); font-size:22px; margin:0 0 4px}
   h2{color:var(--gold); font-size:14.5px; margin:0 0 10px; letter-spacing:.02em}
   p.sub{color:#cfcbea; font-size:13px; margin:0 0 22px}
@@ -113,6 +113,9 @@
   .sb-center-inner .cn{font-size:15px; font-weight:700; color:var(--gold)}
   .sb-center-inner .ci{font-size:12.5px; color:#cfcbea; margin-top:4px; line-height:1.5}
   .sb-center-inner .toll-line{font-size:17px; font-weight:700; color:var(--gold)}
+  .sb-center-inner .toll-donation-line{font-size:11.5px; margin-top:3px; color:#cfcbea}
+  .sb-center-inner .toll-donation-line.toll-plus{color:#7CC98A}
+  .sb-center-inner .toll-donation-line.toll-minus{color:#E5867A}
   .legend{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; font-size:11.5px; color:#9d97c2; justify-content:center}
   .legend span{display:inline-flex; align-items:center; gap:4px}
   .legend i{width:8px; height:8px; border-radius:50%; display:inline-block}
@@ -127,6 +130,42 @@
   .ranktable th{color:#9d97c2; font-weight:600; font-size:11.5px}
   .ranktable td.num{text-align:right; font-variant-numeric:tabular-nums}
   .loglist{max-height:140px; overflow-y:auto; font-size:12px; color:#9d97c2; line-height:1.8}
+
+  /* 게임 화면 2단 레이아웃: 왼쪽에 상태/주사위/내 정보를 세로로 쌓고, 오른쪽에 보드판을
+     넓게 배치(요청: "지금은 세로로 쌓여서 보기 어려움" → 가로 2단 구조로 변경). 보드판
+     같은 이름의 grid-area("board")를 여러 행에 걸쳐 지정해서 왼쪽 칼럼 전체 높이만큼
+     오른쪽에 넓게 자리잡게 합니다. 진행 기록은 폭이 넓을수록 좋아서 맨 아래에 전체 폭으로.
+     화면이 좁아지면(모바일 등) 아래 미디어 쿼리에서 원래처럼 세로 1단으로 되돌아갑니다. */
+  #gameBoard{
+    display:grid;
+    grid-template-columns:minmax(300px,420px) 1fr;
+    grid-template-areas:
+      "timer  board"
+      "turn   board"
+      "stats  board"
+      "action board"
+      "props  board"
+      "rank   board"
+      "log    log";
+    column-gap:16px;
+    align-items:start;
+  }
+  #gameBoard #timerBar{grid-area:timer}
+  #gameBoard #turnBanner{grid-area:turn}
+  #gameBoard #myStats{grid-area:stats}
+  #gameBoard #actionPanel{grid-area:action}
+  #gameBoard #myPropsPanel{grid-area:props}
+  #gameBoard #rankPanel{grid-area:rank}
+  #gameBoard #boardPanel{grid-area:board}
+  #gameBoard #logPanel{grid-area:log}
+  /* 왼쪽 칼럼 요소들은 그리드 칼럼 폭(최대 420px)에 맞춰 꽉 채우고, 기본 .panel 등에 걸린
+     560px 가운데 정렬 제약은 여기서는 해제합니다(그리드가 이미 폭을 잡아주므로). */
+  #gameBoard .panel, #gameBoard .turn-banner, #gameBoard .timerbar, #gameBoard .mystats{
+    max-width:none; margin-left:0; margin-right:0;
+  }
+  @media (max-width: 860px){
+    #gameBoard{ display:block }
+  }
 </style>
 </head>
 <body>
@@ -176,11 +215,11 @@
     <!-- 진행/종료 중 게임 화면 -->
     <div id="gameBoard" class="hidden">
       <div class="timerbar" id="timerBar">경과 시간 -</div>
-      <div class="turn-banner">
+      <div class="turn-banner" id="turnBanner">
         <div class="who" id="turnWho">-</div>
         <div class="what" id="turnWhat">-</div>
       </div>
-      <div class="mystats">
+      <div class="mystats" id="myStats">
         <div class="stat"><div class="lbl">내 자금</div><div class="val" id="myCash">-</div></div>
         <div class="stat"><div class="lbl">내 위치</div><div class="val" id="myPos">-</div></div>
         <div class="stat"><div class="lbl">송편 토큰</div><div class="val" id="mySongpyeon">-</div></div>
@@ -206,7 +245,7 @@
         </table>
       </div>
 
-      <div class="panel panel-wide">
+      <div class="panel panel-wide" id="boardPanel">
         <h2>보드 현황 <span style="font-weight:400; color:#9d97c2; font-size:11px">(칸을 눌러보세요)</span></h2>
         <div class="squareboard" id="squareBoard">
           <div class="sb-center" id="sbCenter"><div class="sb-center-inner" id="sbCenterInner"></div></div>
@@ -221,7 +260,7 @@
         </div>
       </div>
 
-      <div class="panel panel-wide">
+      <div class="panel panel-wide" id="logPanel">
         <h2>진행 기록</h2>
         <div class="loglist" id="logList"></div>
       </div>
@@ -279,6 +318,7 @@
   let selectedPos = null;
   let lastBoardState = null;
   let lastTolls = {}; // { [칸 번호]: 현재 통행료 } — 서버가 game.js의 tollFor()로 직접 계산해서 내려줌
+  let lastTollsPlain = {}; // { [칸 번호]: 후원 효과를 적용하지 않은 원래 통행료 } — tollForPlain()로 계산
   // 칸이 정사각형 테두리(0~100%)에 딱 붙으면 칸의 절반이 컨테이너 밖으로 잘려서 안 보이므로,
   // 칸 크기(13.2%)의 절반만큼 안쪽으로 들여서 배치.
   const SB_MARGIN = 7;
@@ -452,6 +492,7 @@
     const state = data.state;
     if (!state || !state.players) return;
     lastTolls = data.tolls || {};
+    lastTollsPlain = data.tollsPlain || {};
     renderTimer(state, data.serverTime);
     renderTurn(state, data.players);
     renderMyStats(state);
@@ -767,11 +808,21 @@
         const buildLabel = prop.building === "hotel" ? " · 호텔" : prop.building === "villa" ? " · 별장" : "";
         const isMine = prop.ownerId === session.playerId;
         const toll = lastTolls[pos];
+        const tollPlain = lastTollsPlain[pos];
         // 주인이 있는 칸은 방문자 입장에서 지금 당장 얼마를 내야 하는지(통행료)가 가장
         // 궁금한 정보이므로 가운데 정보창에 통행료를 먼저, 크게 보여줍니다. 통행료는
         // 후원 효과/90분 인상까지 실제 청구액과 항상 같은 값(서버 계산)입니다.
+        // 후원 효과로 원래 통행료(tollForPlain)와 실제 통행료(tollFor)가 달라진 경우에만
+        // "원가 → 후원 효과 반영가"를 함께 보여주고, 효과가 없으면(같으면) 표시하지 않습니다.
+        let donationLine = "";
+        if (toll != null && tollPlain != null && toll !== tollPlain) {
+          const diffClass = toll > tollPlain ? "toll-plus" : "toll-minus";
+          donationLine =
+            '<div class="toll-donation-line ' + diffClass + '">원가 ' + fmt(tollPlain) + "원 → 후원 효과 반영 " + fmt(toll) + "원</div>";
+        }
         bodyHtml =
           '<div class="toll-line">' + (isMine ? "내 땅 (통행료 없음)" : "통행료 " + fmt(toll != null ? toll : 0) + " 원") + "</div>" +
+          donationLine +
           '<div style="margin-top:2px">' + priceLine + "<br/>소유: " + (ownerP ? ownerP.name : "?") + buildLabel + "</div>";
       } else {
         bodyHtml = priceLine + "<br/>주인 없음";
