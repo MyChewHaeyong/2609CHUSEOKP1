@@ -67,6 +67,11 @@
   .dice-pip{width:11px; height:11px; border-radius:50%; background:#1E1B3A; align-self:center; justify-self:center}
   .dice-status{font-size:13px; color:#cfcbea; min-height:18px}
   .dice-status.result{color:var(--gold); font-weight:700}
+  .dice-result-detail{margin-top:8px; padding:8px 10px; background:#1a1733; border:1px solid var(--line); border-radius:10px; text-align:left; max-width:280px}
+  .drd-delta{font-size:15px; font-weight:700; color:var(--cream)}
+  .drd-delta.drd-plus{color:#7CC98A}
+  .drd-delta.drd-minus{color:var(--danger, #E5867A)}
+  .drd-lines{margin-top:4px; font-size:12px; color:#cfcbea; line-height:1.5}
 
   /* 캐릭터 아바타 — 지금은 이모지로 표시하고, 나중에 public/characters/char1~4.png를
      저장소에 올리면 자동으로 그 이미지를 우선 사용함(파일이 없으면 이모지로 자동 대체) */
@@ -107,6 +112,7 @@
   .sb-center{position:absolute; left:16%; top:16%; right:16%; bottom:16%; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; border:1px dashed var(--line); border-radius:10px}
   .sb-center-inner .cn{font-size:15px; font-weight:700; color:var(--gold)}
   .sb-center-inner .ci{font-size:12.5px; color:#cfcbea; margin-top:4px; line-height:1.5}
+  .sb-center-inner .toll-line{font-size:17px; font-weight:700; color:var(--gold)}
   .legend{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; font-size:11.5px; color:#9d97c2; justify-content:center}
   .legend span{display:inline-flex; align-items:center; gap:4px}
   .legend i{width:8px; height:8px; border-radius:50%; display:inline-block}
@@ -272,6 +278,7 @@
   ];
   let selectedPos = null;
   let lastBoardState = null;
+  let lastTolls = {}; // { [칸 번호]: 현재 통행료 } — 서버가 game.js의 tollFor()로 직접 계산해서 내려줌
   // 칸이 정사각형 테두리(0~100%)에 딱 붙으면 칸의 절반이 컨테이너 밖으로 잘려서 안 보이므로,
   // 칸 크기(13.2%)의 절반만큼 안쪽으로 들여서 배치.
   const SB_MARGIN = 7;
@@ -444,6 +451,7 @@
 
     const state = data.state;
     if (!state || !state.players) return;
+    lastTolls = data.tolls || {};
     renderTimer(state, data.serverTime);
     renderTurn(state, data.players);
     renderMyStats(state);
@@ -708,7 +716,14 @@
       if (prop) {
         const ownerP = state.players[prop.ownerId];
         const buildLabel = prop.building === "hotel" ? " · 호텔" : prop.building === "villa" ? " · 별장" : "";
-        bodyHtml = priceLine + "<br/>소유: " + (ownerP ? ownerP.name : "?") + buildLabel;
+        const isMine = prop.ownerId === session.playerId;
+        const toll = lastTolls[pos];
+        // 주인이 있는 칸은 방문자 입장에서 지금 당장 얼마를 내야 하는지(통행료)가 가장
+        // 궁금한 정보이므로 가운데 정보창에 통행료를 먼저, 크게 보여줍니다. 통행료는
+        // 후원 효과/90분 인상까지 실제 청구액과 항상 같은 값(서버 계산)입니다.
+        bodyHtml =
+          '<div class="toll-line">' + (isMine ? "내 땅 (통행료 없음)" : "통행료 " + fmt(toll != null ? toll : 0) + " 원") + "</div>" +
+          '<div style="margin-top:2px">' + priceLine + "<br/>소유: " + (ownerP ? ownerP.name : "?") + buildLabel + "</div>";
       } else {
         bodyHtml = priceLine + "<br/>주인 없음";
       }
@@ -837,9 +852,43 @@
     status.className = "dice-status";
     status.textContent = "눌러서 주사위를 굴리세요";
     wrap.appendChild(status);
+    // 이번 턴에 내 수입/지출/효과가 얼마나 발생했는지 주사위 결과 바로 아래에 같이 보여줌
+    const detail = document.createElement("div");
+    detail.id = "diceResultDetail";
+    detail.className = "dice-result-detail hidden";
+    wrap.appendChild(detail);
     const btn = makeBtn("🎲 주사위 굴리기", () => rollDiceWithAnimation());
     wrap.appendChild(btn);
     return wrap;
+  }
+
+  // 이번 턴의 주사위 굴리기로 실제 벌어진 일(수입/지출/효과 발동)을 요약해서
+  // #diceResultDetail에 표시합니다. cashBefore/logBefore는 굴리기 직전 내 상태 기준이고,
+  // afterState는 roll-dice 액션 응답으로 받은(이미 해당 칸의 통행료/즉시 이벤트까지 반영된)
+  // 최신 상태입니다. 시장/친척집/달토끼 상점처럼 별도 선택이 필요한 이벤트는 이 시점엔 아직
+  // 정산 전이라 여기 포함되지 않고, 선택 후 로그/현금 변화로 반영됩니다.
+  function renderDiceResultDetail(cashBefore, logBefore, afterState) {
+    const el = $("diceResultDetail");
+    if (!el) return;
+    const me = afterState.players[session.playerId];
+    const cashAfter = me ? me.cash : cashBefore;
+    const delta = cashAfter - cashBefore;
+    const deltaLine =
+      delta > 0
+        ? '<div class="drd-delta drd-plus">수입 +' + fmt(delta) + " 원</div>"
+        : delta < 0
+        ? '<div class="drd-delta drd-minus">지출 -' + fmt(-delta) + " 원</div>"
+        : '<div class="drd-delta">현금 변동 없음</div>';
+    // 이번 굴리기로 새로 추가된 로그 줄만 뽑되, "OOO: 주사위 N"처럼 결과 숫자만 알려주는
+    // 줄(위에 이미 "결과: N"으로 표시됨)은 중복이라 제외합니다. 통행료/이벤트/후원 효과 발동
+    // 등 실제로 무슨 일이 있었는지 설명하는 줄은 전부 그대로 보여줍니다.
+    const newLines = (afterState.log || [])
+      .slice(logBefore)
+      .filter((line) => !/: 주사위 \d+$/.test(line));
+    el.innerHTML =
+      deltaLine +
+      (newLines.length ? '<div class="drd-lines">' + newLines.map((l) => "· " + l).join("<br/>") + "</div>" : "");
+    el.classList.remove("hidden");
   }
 
   async function rollDiceWithAnimation() {
@@ -851,6 +900,12 @@
     const btn = document.querySelector("#actionArea button");
     if (btn) btn.disabled = true;
     if (status) { status.textContent = "굴리는 중..."; status.classList.remove("result"); }
+    const detailEl = $("diceResultDetail");
+    if (detailEl) detailEl.classList.add("hidden");
+    // 굴리기 직전(마지막 폴링 기준) 내 현금/로그 길이를 기준점으로 저장해둬야, 응답으로 온
+    // 최신 상태와 비교해서 "이번 굴리기로 무엇이 얼마나 바뀌었는지"를 계산할 수 있습니다.
+    const cashBefore = (lastBoardState && lastBoardState.players[session.playerId]) ? lastBoardState.players[session.playerId].cash : 0;
+    const logBefore = (lastBoardState && lastBoardState.log) ? lastBoardState.log.length : 0;
 
     try {
       const data = await api("/api/rooms/" + session.roomCode + "/action", {
@@ -861,6 +916,7 @@
         }),
       });
       const roll = data.state && data.state.lastRoll ? data.state.lastRoll.roll : 1 + Math.floor(Math.random() * 6);
+      if (data.state) renderDiceResultDetail(cashBefore, logBefore, data.state);
 
       if (cube) {
         const [baseX, baseY] = DICE_SHOW_ROTATION[roll] || [0, 0];
