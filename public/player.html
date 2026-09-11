@@ -462,7 +462,15 @@
     renderRanking(state);
   }
 
+  // 이 목록의 내용(연결 상태 포함)이 실제로 바뀌었을 때만 다시 그립니다. 매초 폴링마다
+  // 통째로 다시 그리면 그 안의 아바타 <img>도 매번 새로 생성되어, 이미지가 로드되는 짧은
+  // 순간마다 화면이 깜빡이는 것처럼 보입니다(특히 여러 명이 함께 보고 있는 화면일수록 눈에
+  // 잘 띕니다).
+  let lastPlayersKey = null;
   function renderPlayers(players) {
+    const key = players.map((p) => [p.id, p.connected, p.isBot, p.characterId, p.name, p.seat].join(":")).join("|");
+    if (key === lastPlayersKey) return;
+    lastPlayersKey = key;
     const el = $("playerList");
     el.innerHTML = "";
     players.forEach((p) => {
@@ -490,21 +498,33 @@
     bar.classList.toggle("hot", hot);
   }
 
+  // "지금 누구 차례인지" 아바타는 같은 사람 차례가 계속 이어지는 동안(보통 여러 초)에는
+  // 안 바뀌므로, 실제로 차례가 넘어갈 때만 다시 그립니다(매초 다시 그리면 아바타 이미지가
+  // 깜빡여 보임). 단계 안내 문구(turnWhat)는 가벼운 텍스트라 그냥 매번 갱신합니다.
+  let lastTurnWhoKey = null;
   function renderTurn(state, players) {
     if (state.phase === "ended") {
-      $("turnWho").textContent = "게임 종료";
+      if (lastTurnWhoKey !== "ended") {
+        $("turnWho").textContent = "게임 종료";
+        lastTurnWhoKey = "ended";
+      }
       $("turnWhat").textContent = "아래 최종 순위를 확인하세요";
       return;
     }
     const cur = state.players[state.currentPlayerId];
     const isMe = state.currentPlayerId === session.playerId;
-    $("turnWho").innerHTML = cur
-      ? '<span class="name-avatar">' + avatarHtml(cur.characterId, 22) + "<span>" + cur.name + (isMe ? " (나)" : "") + "</span></span>"
-      : "-";
+    const whoKey = cur ? cur.characterId + "|" + cur.name + "|" + isMe : "none";
+    if (whoKey !== lastTurnWhoKey) {
+      $("turnWho").innerHTML = cur
+        ? '<span class="name-avatar">' + avatarHtml(cur.characterId, 22) + "<span>" + cur.name + (isMe ? " (나)" : "") + "</span></span>"
+        : "-";
+      lastTurnWhoKey = whoKey;
+    }
     const phaseLabel = {
       "awaiting-roll": "주사위를 굴릴 차례",
       "awaiting-buy": "도시 구매를 결정할 차례",
       "awaiting-event": "이벤트를 처리할 차례",
+      "awaiting-toll": "통행료 면제권 사용 여부를 결정할 차례",
       "awaiting-endturn": "턴을 마무리할 차례",
     }[state.turnPhase] || state.turnPhase;
     $("turnWhat").textContent = phaseLabel;
@@ -552,6 +572,8 @@
       area.appendChild(row);
     } else if (state.turnPhase === "awaiting-event" && state.pendingEvent) {
       area.appendChild(renderEventArea(state));
+    } else if (state.turnPhase === "awaiting-toll" && state.pendingToll) {
+      area.appendChild(renderTollArea(state));
     } else if (state.turnPhase === "awaiting-endturn") {
       area.appendChild(makeBtn("턴 종료", () => sendAction("end-turn", {})));
       if (me.items && me.items.includes("reroll")) {
@@ -597,6 +619,25 @@
     return wrap;
   }
 
+  function renderTollArea(state) {
+    const pending = state.pendingToll;
+    const tile = TILES[pending.pos];
+    const owner = state.players[pending.ownerId];
+    const wrap = document.createElement("div");
+    const card = document.createElement("div");
+    card.className = "tilecard";
+    card.innerHTML =
+      '<div class="tname">' + (tile ? tile.name : "") + '</div><div class="tinfo">' +
+      (owner ? owner.name : "?") + "에게 낼 통행료 " + fmt(pending.amount) + " 원 · 통행료 면제권 보유 중</div>";
+    wrap.appendChild(card);
+    const row = document.createElement("div");
+    row.className = "btnrow";
+    row.appendChild(makeBtn("면제권 사용 (0원)", () => sendAction("resolve-toll", { useItem: true })));
+    row.appendChild(makeBtn("그냥 낼게요 (" + fmt(pending.amount) + "원)", () => sendAction("resolve-toll", { useItem: false }), true));
+    wrap.appendChild(row);
+    return wrap;
+  }
+
   function renderMyProps(state) {
     const panel = $("myPropsPanel");
     const isMyTurn = state.phase === "playing" && state.currentPlayerId === session.playerId && state.turnPhase === "awaiting-endturn";
@@ -606,6 +647,8 @@
     panel.classList.toggle("hidden", !isMyTurn || myPositions.length === 0);
     if (!isMyTurn || myPositions.length === 0) return;
 
+    const me = state.players[session.playerId];
+    const hasHalfBuild = !!(me && me.items && me.items.includes("half-build"));
     const list = $("myPropsList");
     list.innerHTML = "";
     myPositions.forEach((pos) => {
@@ -619,8 +662,14 @@
       row.innerHTML = '<span class="pn">' + tile.name + " (" + buildLabel + ")</span>";
       if (ownsRegionAll && prop.building === "none") {
         row.appendChild(makeSmallBtn("별장 건설", () => sendAction("build", { tilePos: pos, level: "villa" })));
+        if (hasHalfBuild) {
+          row.appendChild(makeSmallBtn("별장 건설 (반값권 사용)", () => sendAction("build", { tilePos: pos, level: "villa", useItem: true }), true));
+        }
       } else if (ownsRegionAll && prop.building === "villa") {
         row.appendChild(makeSmallBtn("호텔 건설", () => sendAction("build", { tilePos: pos, level: "hotel" })));
+        if (hasHalfBuild) {
+          row.appendChild(makeSmallBtn("호텔 건설 (반값권 사용)", () => sendAction("build", { tilePos: pos, level: "hotel", useItem: true }), true));
+        }
       }
       row.appendChild(makeSmallBtn("매각", () => sendAction("sell-property", { tilePos: pos }), true));
       list.appendChild(row);
@@ -747,11 +796,18 @@
     });
   }
 
+  // 최종 순위는 게임 종료 시점에 한 번 확정되면 더 바뀌지 않으므로(종료 화면을 계속
+  // 띄워두는 동안 매초 다시 그리면 아바타가 깜빡여 보임), 내용이 실제로 같으면 다시
+  // 그리지 않습니다.
+  let lastRankingKey = null;
   function renderRanking(state) {
     const panel = $("rankPanel");
     const show = state.phase === "ended" && Array.isArray(state.finalRanking);
     panel.classList.toggle("hidden", !show);
-    if (!show) return;
+    if (!show) { lastRankingKey = null; return; }
+    const key = state.finalRanking.map((r) => r.playerId + ":" + r.rank + ":" + r.netWorth + ":" + (r.songpyeon || 0)).join(",");
+    if (key === lastRankingKey) return;
+    lastRankingKey = key;
     const body = $("rankBody");
     body.innerHTML = "";
     state.finalRanking.forEach((r) => {
