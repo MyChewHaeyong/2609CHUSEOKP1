@@ -74,6 +74,7 @@ function initState(players, existingDonationEffects, existingDonationEnabled) {
     turnPhase: "awaiting-roll",
     gameStartedAt: null,
     pendingEvent: null,
+    pendingToll: null,
     lastRoll: null,
     winnerId: null,
     log: ["게임을 시작합니다."],
@@ -292,6 +293,7 @@ function advanceTurn(state) {
       state.currentPlayerId = pid;
       state.turnPhase = "awaiting-roll";
       state.pendingEvent = null;
+      state.pendingToll = null;
       return;
     }
   }
@@ -378,6 +380,39 @@ function itemLabel(item) {
   return { "toll-free": "통행료 면제권", reroll: "주사위 재굴림권", "half-build": "건설비 반값권" }[item] || item;
 }
 
+// 통행료 면제권을 실제로 쓸지 말지 확정 짓고 통행료를 정산합니다. useItem이 true이고
+// 실제로 면제권을 들고 있으면 소모하며 통행료 0원, 아니면 정상적으로 통행료를 냅니다.
+// 봇은 항상 useItem=true로 이 함수를 호출해(기존 자동 사용 동작 그대로 유지) 곧바로
+// 처리하고, 사람은 awaiting-toll 단계에서 직접 선택한 뒤에야 이 함수가 호출됩니다.
+function resolveToll(state, playerId, useItem, now) {
+  const p = state.players[playerId];
+  const pending = state.pendingToll;
+  state.pendingToll = null;
+  if (!pending) return;
+  let amount = pending.amount;
+  const tfIdx = p.items.indexOf("toll-free");
+  if (useItem && tfIdx !== -1 && amount > 0) {
+    p.items.splice(tfIdx, 1);
+    state.log.push(`${p.name}: 통행료 면제권 사용`);
+    amount = 0;
+  }
+  if (amount > 0) {
+    const paid = chargePlayer(state, playerId, amount, now);
+    const owner = state.players[pending.ownerId];
+    if (owner && paid > 0) owner.cash += paid;
+    state.log.push(
+      `${p.name} → ${owner ? owner.name : "?"} 통행료 ${paid.toLocaleString()}` +
+        (paid < amount ? " (자금 부족으로 파산)" : "")
+    );
+  }
+  // 통행료를 내다가 파산했다면 턴을 마무리할 사람이 없으므로 곧바로 다음 사람에게 넘김
+  if (p.bankrupt) {
+    advanceTurn(state);
+    return;
+  }
+  state.turnPhase = "awaiting-endturn";
+}
+
 function applyRoll(state, playerId, now) {
   if (!state.gameStartedAt) state.gameStartedAt = now;
   const p = state.players[playerId];
@@ -422,28 +457,16 @@ function applyRoll(state, playerId, now) {
       state.turnPhase = "awaiting-endturn";
       return;
     }
-    let amount = tollFor(state, tile.pos, now);
-    const tfIdx = p.items.indexOf("toll-free");
-    if (tfIdx !== -1 && amount > 0) {
-      p.items.splice(tfIdx, 1);
-      state.log.push(`${p.name}: 통행료 면제권 사용`);
-      amount = 0;
-    }
-    if (amount > 0) {
-      const paid = chargePlayer(state, playerId, amount, now);
-      const owner = state.players[prop.ownerId];
-      if (owner && paid > 0) owner.cash += paid;
-      state.log.push(
-        `${p.name} → ${owner ? owner.name : "?"} 통행료 ${paid.toLocaleString()}` +
-          (paid < amount ? " (자금 부족으로 파산)" : "")
-      );
-    }
-    // 통행료를 내다가 파산했다면 턴을 마무리할 사람이 없으므로 곧바로 다음 사람에게 넘김
-    if (p.bankrupt) {
-      advanceTurn(state);
+    const amount = tollFor(state, tile.pos, now);
+    state.pendingToll = { pos: tile.pos, amount, ownerId: prop.ownerId };
+    const hasTollFree = p.items.includes("toll-free");
+    if (amount > 0 && hasTollFree && !p.isBot) {
+      // 사람 플레이어는 면제권을 실제로 쓸지 직접 고를 수 있도록 턴을 잠시 멈춥니다.
+      state.turnPhase = "awaiting-toll";
       return;
     }
-    state.turnPhase = "awaiting-endturn";
+    // 봇이거나(기존처럼 있으면 자동 사용) 면제권이 없거나 통행료가 0원이면 곧바로 처리
+    resolveToll(state, playerId, hasTollFree, now);
     return;
   }
   // event tile
@@ -560,6 +583,12 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       state.turnPhase = "awaiting-endturn";
       break;
     }
+    case "resolve-toll": {
+      assertCurrentTurn(state, playerId);
+      if (state.turnPhase !== "awaiting-toll" || !state.pendingToll) throw new Error("지금은 처리할 통행료가 없습니다.");
+      resolveToll(state, playerId, !!payload?.useItem, now);
+      break;
+    }
     case "resolve-event": {
       assertCurrentTurn(state, playerId);
       if (state.turnPhase !== "awaiting-event" || !state.pendingEvent) throw new Error("지금은 처리할 이벤트가 없습니다.");
@@ -591,8 +620,9 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       } else {
         throw new Error("알 수 없는 건물 종류입니다.");
       }
-      const halfIdx = p.items.indexOf("half-build");
-      if (halfIdx !== -1) {
+      if (payload?.useItem) {
+        const halfIdx = p.items.indexOf("half-build");
+        if (halfIdx === -1) throw new Error("보유한 건설비 반값권이 없습니다.");
         cost = Math.round(cost * 0.5);
         p.items.splice(halfIdx, 1);
         state.log.push(`${p.name}: 건설비 반값권 사용`);
