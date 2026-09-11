@@ -276,9 +276,9 @@
         ? "최근 발동: " +
           hist
             .slice(-5)
-            .map((h) => h.atCount + "개 도달 → " + (h.deltaPct >= 0 ? "+" : "") + h.deltaPct.toFixed(1) + "%")
+            .map((h) => (h.donationSize != null ? h.donationSize : h.atCount) + "개 후원 → " + (h.deltaPct >= 0 ? "+" : "") + h.deltaPct.toFixed(1) + "%")
             .join(" · ")
-        : "아직 발동한 효과가 없습니다 (30/31/300/301개에서 발동).";
+        : "아직 발동한 효과가 없습니다 (한 번의 후원이 정확히 30·31·300·301개일 때 발동, 반복 가능).";
     }
   }
 
