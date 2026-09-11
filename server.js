@@ -145,6 +145,21 @@ function tollPreviewFor(state, t) {
   return preview;
 }
 
+// 위와 완전히 같은 형태이되, 후원 효과 보정 없이(tollForPlain) 계산한 "원래 통행료"
+// 버전입니다. 참가자 화면에서 칸을 클릭했을 때 "원가 vs 후원 효과 반영가"를 함께 보여줄
+// 때만 쓰고, 실제 청구/정산에는 절대 쓰지 않습니다.
+function tollPlainPreviewFor(state, t) {
+  const preview = {};
+  if (!state || !state.properties) return preview;
+  Object.keys(state.properties).forEach((posStr) => {
+    const prop = state.properties[posStr];
+    if (!prop || !prop.ownerId) return;
+    const pos = Number(posStr);
+    preview[pos] = Game.tollForPlain(state, pos, t);
+  });
+  return preview;
+}
+
 // 2부(만찬경매) state.phase를 rooms.status 컬럼(waiting/playing/ended)으로 매핑.
 // 1부의 undo 버그 수정 때와 같은 이유로, 상태를 저장할 때마다 항상 이 매핑을 같이 갱신해야
 // join 가능 여부(waiting 체크) 등이 화면과 어긋나지 않습니다.
@@ -304,6 +319,7 @@ app.get("/api/rooms/:code/state", (req, res) => {
     stateVersion: room.state_version,
     state: part1State,
     tolls: tollPreviewFor(part1State, now()),
+    tollsPlain: tollPlainPreviewFor(part1State, now()),
     players: getPlayers(room.code).map(publicPlayer),
     serverTime: now(),
   });
@@ -399,11 +415,17 @@ function applyAction(room, player, type, payload) {
     // 항상 마스킹된 클라이언트용 상태만 담습니다.
     const responseState = room.game_mode === "auction" ? Game2.serializeForClient(state, { forAdmin: false }) : state;
     const result = { stateVersion: newVersion, state: responseState };
-    if (room.game_mode === "paldomarble") result.tolls = tollPreviewFor(state, now());
+    if (room.game_mode === "paldomarble") {
+      result.tolls = tollPreviewFor(state, now());
+      result.tollsPlain = tollPlainPreviewFor(state, now());
+    }
     return result;
   }
   const result = { stateVersion: room.state_version, state };
-  if (room.game_mode === "paldomarble") result.tolls = tollPreviewFor(state, now());
+  if (room.game_mode === "paldomarble") {
+    result.tolls = tollPreviewFor(state, now());
+    result.tollsPlain = tollPlainPreviewFor(state, now());
+  }
   return result;
 }
 
