@@ -471,7 +471,7 @@ function addDonation(state, playerId, count, now, source) {
   const pname = (state.players && state.players[playerId] && state.players[playerId].name) || playerId;
   fired.forEach((f) => {
     state.log.push(
-      `[후원 효과] ${pname} 누적 ${f.atCount}개 — ${f.deltaPct >= 0 ? "+" : ""}${f.deltaPct.toFixed(1)}% (누적 보정률 ${(f.after * 100).toFixed(1)}%)`
+      `[후원 효과] ${pname} 후원 ${f.donationSize}개 — ${f.deltaPct >= 0 ? "+" : ""}${f.deltaPct.toFixed(1)}% (누적 보정률 ${(f.after * 100).toFixed(1)}%)`
     );
   });
   return fired;
