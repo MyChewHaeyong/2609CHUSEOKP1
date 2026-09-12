@@ -53,7 +53,7 @@
   <div class="panel">
     <h2>현재 상태</h2>
     <div id="statusLine" class="msg"></div>
-    <p class="hint" style="margin-top:6px">방을 불러오면 그 방의 게임모드(1부 팔도마블 / 2부 만찬경매)에 맞는 관리 도구가 아래에 자동으로 나타납니다.</p>
+    <p class="hint" style="margin-top:6px">방을 불러오면 그 방의 게임모드(1부 팔도마블 / 2부 차례상 경매)에 맞는 관리 도구가 아래에 자동으로 나타납니다.</p>
     <div id="playerList" style="margin-top:8px"></div>
     <button id="refreshBtn" class="secondary" style="margin-top:10px">지금 새로고침</button>
   </div>
@@ -84,9 +84,9 @@
     <div id="startMsg" class="msg"></div>
   </div>
 
-  <!-- 2부 만찬경매 전용: 경매/투표 진행 관리 -->
+  <!-- 2부 차례상 경매 전용: 경매/투표 진행 관리 -->
   <div class="panel hidden" id="auctionPanel">
-    <h2>경매 진행 관리 <span class="tag">2부 만찬경매</span></h2>
+    <h2>경매 진행 관리 <span class="tag">2부 차례상 경매</span></h2>
     <div id="auctionStatusLine" class="msg"></div>
 
     <div id="auctionStartBox" class="hidden" style="margin-top:10px">
@@ -202,7 +202,7 @@
   }
   const fmtMoney = (n) => (n || 0).toLocaleString("ko-KR");
   function gameModeLabel(m) {
-    if (m === "auction") return "2부 만찬경매";
+    if (m === "auction") return "2부 차례상 경매";
     if (m === "paldomarble") return "1부 팔도마블";
     return m || "-";
   }
@@ -388,7 +388,7 @@
     }
   }
 
-  // 2부(만찬경매) 상태는 /admin의 원본 state가 아니라 /state(+adminKey)를 따로 불러옵니다.
+  // 2부(차례상 경매) 상태는 /admin의 원본 state가 아니라 /state(+adminKey)를 따로 불러옵니다.
   // /admin은 서버 내부 원본 state를 그대로 돌려주는데, 2부는 경매 중인 품목 정체를 낙찰
   // 전까지 절대 노출하지 않아야 하는 블라인드 규칙이 있어서, 그 마스킹을 그대로 지켜주는
   // /state(Game2.serializeForClient) 쪽을 써야 방송 중 관리자 화면을 통해 스포일러가 새는
@@ -685,7 +685,7 @@
     }
   });
 
-  // --- 2부 만찬경매: 경매/투표 진행 관리 ---
+  // --- 2부 차례상 경매: 경매/투표 진행 관리 ---
   $("auctionTotalPlayers").addEventListener("change", () => {
     const humanCount = (lastPlayers || []).filter((p) => !p.isBot).length;
     renderAuctionBotNameInputs(humanCount);
