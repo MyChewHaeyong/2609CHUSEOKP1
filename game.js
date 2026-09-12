@@ -12,7 +12,7 @@ const TILES = [
   { pos: 0, name: "귀성길 출발", type: "start" },
   { pos: 1, name: "대전", type: "city", region: "cc", price: 30000 },
   { pos: 2, name: "세종", type: "city", region: "cc", price: 35000 },
-  { pos: 3, name: "전통시장", type: "event", eventType: "market" },
+  { pos: 3, name: "복주머니", type: "event", eventType: "market" },
   { pos: 4, name: "청주", type: "city", region: "cc", price: 40000 },
   { pos: 5, name: "친척집", type: "event", eventType: "relative" },
   { pos: 6, name: "광주", type: "city", region: "jl", price: 45000 },
@@ -102,11 +102,11 @@ function initState(players, existingDonationEffects, existingDonationEnabled) {
 
 function tollFor(state, pos, now) {
   const tile = TILES[pos];
-  const prop = state.properties[pos] || { ownerId: null, building: "none" };
+  const prop = state.properties[pos] || { ownerId: null, villa: false, hotel: false };
   const mult = TOLL_MULT[tile.region];
   let tier;
-  if (prop.building === "hotel") tier = 0.6;
-  else if (prop.building === "villa") tier = 0.3;
+  if (prop.hotel) tier = 0.6;
+  else if (prop.villa) tier = 0.3;
   else if (cityTilesOfRegion(tile.region).length > 1 && ownsRegion(state, prop.ownerId, tile.region)) tier = 0.2;
   else tier = 0.1;
   let amount = Math.round(tile.price * tier * mult);
@@ -125,11 +125,11 @@ function tollFor(state, pos, now) {
 // 용도로만 씁니다(실제 청구/정산에는 항상 tollFor()만 사용됨).
 function tollForPlain(state, pos, now) {
   const tile = TILES[pos];
-  const prop = state.properties[pos] || { ownerId: null, building: "none" };
+  const prop = state.properties[pos] || { ownerId: null, villa: false, hotel: false };
   const mult = TOLL_MULT[tile.region];
   let tier;
-  if (prop.building === "hotel") tier = 0.6;
-  else if (prop.building === "villa") tier = 0.3;
+  if (prop.hotel) tier = 0.6;
+  else if (prop.villa) tier = 0.3;
   else if (cityTilesOfRegion(tile.region).length > 1 && ownsRegion(state, prop.ownerId, tile.region)) tier = 0.2;
   else tier = 0.1;
   let amount = Math.round(tile.price * tier * mult);
@@ -137,25 +137,41 @@ function tollForPlain(state, pos, now) {
   return amount;
 }
 
-function stepSellValue(state, tile, fromLevel) {
-  // 매각환급금은 후원 효과 적용 범위에서 제외됩니다(통행료만 적용 — 사용자 확정 사항).
-  return fromLevel === "hotel" || fromLevel === "villa" ? Math.round(tile.price * 0.25) : Math.round(tile.price * 0.5);
-}
-function sellOneStep(state, pos) {
+// 별장/호텔은 이제 서로 독립된 건물이라(단계식 사다리가 아님) 매각도 "원하는 부분만"
+// 골라서 할 수 있습니다. part: "villa" | "hotel" | "land". 땅(land)은 그 위에 별장/호텔이
+// 남아있지 않을 때만 매각할 수 있습니다(건물부터 각각 정리한 뒤 땅을 매각).
+// 매각환급금은 후원 효과 적용 범위에서 제외됩니다(통행료만 적용 — 사용자 확정 사항).
+function sellPiece(state, pos, part) {
   const tile = TILES[pos];
   const prop = state.properties[pos];
   if (!prop || !prop.ownerId) return 0;
-  if (prop.building === "hotel") {
-    prop.building = "villa";
-    return stepSellValue(state, tile, "hotel");
+  if (part === "villa") {
+    if (!prop.villa) throw new Error("매각할 별장이 없습니다.");
+    prop.villa = false;
+    return Math.round(tile.price * 0.25);
   }
-  if (prop.building === "villa") {
-    prop.building = "none";
-    return stepSellValue(state, tile, "villa");
+  if (part === "hotel") {
+    if (!prop.hotel) throw new Error("매각할 호텔이 없습니다.");
+    prop.hotel = false;
+    return Math.round(tile.price * 0.25);
   }
-  const refund = stepSellValue(state, tile, "none");
-  delete state.properties[pos];
-  return refund;
+  if (part === "land") {
+    if (prop.villa || prop.hotel) throw new Error("땅을 매각하려면 먼저 별장/호텔을 매각해야 합니다.");
+    const refund = Math.round(tile.price * 0.5);
+    delete state.properties[pos];
+    return refund;
+  }
+  throw new Error("알 수 없는 매각 대상입니다.");
+}
+
+// 빚을 갚기 위한 자동(강제) 청산 전용: 사람이 직접 고르는 것이 아니라 서버가 순서대로
+// (호텔 → 별장 → 땅) 하나씩 팔아나갑니다. 기존 동작과 동일한 우선순위를 유지합니다.
+function forceLiquidateOneStep(state, pos) {
+  const prop = state.properties[pos];
+  if (!prop || !prop.ownerId) return 0;
+  if (prop.hotel) return sellPiece(state, pos, "hotel");
+  if (prop.villa) return sellPiece(state, pos, "villa");
+  return sellPiece(state, pos, "land");
 }
 
 // 반환값: 실제로 걷은 금액(파산으로 일부만 걷혔을 수 있음). 호출한 쪽에서
@@ -179,7 +195,7 @@ function chargePlayer(state, playerId, amount, now) {
       .filter((pos) => state.properties[pos].ownerId === playerId);
     for (const pos of myPositions) {
       if (need <= 0) break;
-      const refund = sellOneStep(state, pos);
+      const refund = forceLiquidateOneStep(state, pos);
       if (refund > 0) {
         const useForDebt = Math.min(refund, need);
         paid += useForDebt;
@@ -207,8 +223,8 @@ function assetValue(state, playerId) {
     if (prop.ownerId !== playerId) return;
     const tile = TILES[pos];
     total += tile.price;
-    if (prop.building === "villa") total += Math.round(tile.price * 0.5);
-    else if (prop.building === "hotel") total += Math.round(tile.price * 0.5) * 2;
+    if (prop.villa) total += Math.round(tile.price * 0.5);
+    if (prop.hotel) total += Math.round(tile.price * 0.5) * 2;
   });
   return total;
 }
@@ -372,7 +388,7 @@ function applyEventChoice(state, playerId, choice, now) {
     const delta = ev.cards[idx];
     if (delta >= 0) p.cash += delta;
     else chargePlayer(state, playerId, -delta, now);
-    state.log.push(`${p.name}: 전통시장 카드 결과 ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}`);
+    state.log.push(`${p.name}: 복주머니 카드 결과 ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}`);
   } else if (ev.type === "relative") {
     if (choice === "perform") {
       const bonus = 5000 + Math.floor(Math.random() * 6) * 1000;
@@ -501,19 +517,22 @@ function wouldCompleteRegion(state, playerId, tile) {
 
 function maybeBotBuild(state, playerId) {
   const p = state.players[playerId];
+  // 별장/호텔은 이제 단계식이 아니라 각자 독립적으로 지을 수 있고, 권역을 전부 소유해야
+  // 한다는 조건도 없습니다(사용자 확정 사항: "자금 여력에 따라 구매 가능"). 자금만 되면
+  // 별장/호텔을 각각(둘 다 없다면 한 턴에 둘 다도 가능) 지을 수 있습니다.
   for (const pos of Object.keys(state.properties).map(Number)) {
     const prop = state.properties[pos];
     if (prop.ownerId !== playerId) continue;
     const tile = TILES[pos];
-    if (!ownsRegion(state, playerId, tile.region)) continue;
     const cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
-    if (prop.building === "none" && p.cash - cost >= 20000) {
+    if (!prop.villa && p.cash - cost >= 20000) {
       p.cash -= cost;
-      prop.building = "villa";
+      prop.villa = true;
       state.log.push(`${p.name}(BOT): ${tile.name}에 별장 건설`);
-    } else if (prop.building === "villa" && p.cash - cost >= 20000) {
+    }
+    if (!prop.hotel && p.cash - cost >= 20000) {
       p.cash -= cost;
-      prop.building = "hotel";
+      prop.hotel = true;
       state.log.push(`${p.name}(BOT): ${tile.name}에 호텔 건설`);
     }
   }
@@ -543,7 +562,7 @@ function botTakeTurn(state, now) {
     const price = tile.price; // 구매가는 후원 효과 적용 범위 밖(통행료만 적용)
     const afford = p.cash - price;
     if (price <= p.cash && (afford >= 20000 || wouldCompleteRegion(state, pid, tile))) {
-      state.properties[tile.pos] = { ownerId: pid, building: "none" };
+      state.properties[tile.pos] = { ownerId: pid, villa: false, hotel: false };
       p.cash -= price;
       state.log.push(`${p.name}(BOT): ${tile.name} 구매`);
     }
@@ -589,7 +608,7 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       const price = tile.price; // 구매가는 후원 효과 적용 범위 밖(통행료만 적용)
       if (p.cash < price) throw new Error("자금이 부족합니다.");
       p.cash -= price;
-      state.properties[tile.pos] = { ownerId: playerId, building: "none" };
+      state.properties[tile.pos] = { ownerId: playerId, villa: false, hotel: false };
       state.log.push(`${p.name}: ${tile.name} 구매`);
       state.turnPhase = "awaiting-endturn";
       break;
@@ -610,7 +629,7 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       assertCurrentTurn(state, playerId);
       if (state.turnPhase !== "awaiting-event" || !state.pendingEvent) throw new Error("지금은 처리할 이벤트가 없습니다.");
       applyEventChoice(state, playerId, payload?.choice, now);
-      // 전통시장 카드에서 큰 손해를 봐서 파산했을 수도 있음 → 그 경우 곧바로 다음 사람 턴으로
+      // 복주머니 카드에서 큰 손해를 봐서 파산했을 수도 있음 → 그 경우 곧바로 다음 사람 턴으로
       if (p.bankrupt) {
         advanceTurn(state);
         break;
@@ -626,13 +645,15 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       if (!tile || tile.type !== "city") throw new Error("건설할 수 없는 칸입니다.");
       const prop = state.properties[pos];
       if (!prop || prop.ownerId !== playerId) throw new Error("본인 소유의 땅이 아닙니다.");
-      if (!ownsRegion(state, playerId, tile.region)) throw new Error("같은 권역을 모두 소유해야 건설할 수 있습니다.");
+      // 별장/호텔은 단계식으로 거치지 않고 각각 독립적으로 지을 수 있으며(사용자 확정 사항:
+      // "자금 여력에 따라 구매 가능"), 권역을 전부 소유해야 한다는 조건도 없습니다.
+      // 한 칸에는 별장·호텔을 각각 최대 1개씩(동시에) 보유할 수 있습니다.
       let cost;
       if (payload.level === "villa") {
-        if (prop.building !== "none") throw new Error("이미 건물이 있습니다.");
+        if (prop.villa) throw new Error("이미 별장이 있습니다.");
         cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
       } else if (payload.level === "hotel") {
-        if (prop.building !== "villa") throw new Error("먼저 별장을 지어야 합니다.");
+        if (prop.hotel) throw new Error("이미 호텔이 있습니다.");
         cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
       } else {
         throw new Error("알 수 없는 건물 종류입니다.");
@@ -646,7 +667,8 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       }
       if (p.cash < cost) throw new Error("자금이 부족합니다.");
       p.cash -= cost;
-      prop.building = payload.level;
+      if (payload.level === "villa") prop.villa = true;
+      else prop.hotel = true;
       state.log.push(`${p.name}: ${tile.name}에 ${payload.level === "villa" ? "별장" : "호텔"} 건설`);
       break;
     }
@@ -656,9 +678,14 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       const pos = payload?.tilePos;
       const prop = state.properties[pos];
       if (!prop || prop.ownerId !== playerId) throw new Error("본인 소유의 땅이 아닙니다.");
-      const refund = sellOneStep(state, pos);
+      // 이제 단계별(호텔→별장→땅)로 순서대로 내려가며 매각하지 않고, 별장/호텔/땅 중
+      // 원하는 부분만 골라서 매각할 수 있습니다(사용자 확정 사항).
+      const part = payload?.part;
+      const tileName = TILES[pos] ? TILES[pos].name : "";
+      const refund = sellPiece(state, pos, part);
       p.cash += refund;
-      state.log.push(`${p.name}: 매각 +${refund.toLocaleString()}`);
+      const partLabel = part === "villa" ? "별장" : part === "hotel" ? "호텔" : "땅";
+      state.log.push(`${p.name}: ${tileName} ${partLabel} 매각 +${refund.toLocaleString()}`);
       break;
     }
     case "use-item": {
