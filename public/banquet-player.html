@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>만찬경매 - 참가자</title>
+<title>차례상 경매 - 참가자</title>
 <style>
   :root{ --bg:#1E1B3A; --panel:#262048; --gold:#D9A441; --red:#C0392B; --cream:#F4E9D8; --line:#3A3466; --ok:#4E9F63; }
   *{box-sizing:border-box}
   body{margin:0; min-height:100vh; background:var(--bg); color:var(--cream); font-family:"Malgun Gothic","맑은 고딕",sans-serif;}
-  .wrap{max-width:1000px; margin:0 auto; padding:24px 14px 60px}
+  .wrap{max-width:1180px; margin:0 auto; padding:24px 14px 60px}
   h1{color:var(--gold); font-size:22px; margin:0 0 4px}
   h2{color:var(--gold); font-size:14.5px; margin:0 0 10px; letter-spacing:.02em}
   p.sub{color:#cfcbea; font-size:13px; margin:0 0 22px}
@@ -81,11 +81,23 @@
   .ranktable td.num{text-align:right; font-variant-numeric:tabular-nums}
   .loglist{max-height:140px; overflow-y:auto; font-size:12px; color:#9d97c2; line-height:1.8}
   .adminbox{background:#1a1733; border:1px solid var(--gold); border-radius:8px; padding:10px 12px; margin:10px 0; font-size:12.5px; color:#cfcbea}
+
+  /* 진행 화면 2단 레이아웃: 왼쪽에 지금 진행 상황(입찰/결과/투표 카드)과 내 자금·낙찰
+     개수를, 오른쪽에 내 차례상·품목 목록·다른 참가자를 배치(요청: 첨부 이미지처럼 변경).
+     진행 기록은 폭이 넓을수록 좋아서 2단 아래에 전체 폭으로 둡니다. 화면이 좁아지면
+     원래처럼 세로 1단으로 되돌아갑니다. */
+  .ba-columns{display:flex; align-items:flex-start; gap:16px}
+  .ba-left{flex:0 0 380px; min-width:0}
+  .ba-right{flex:1 1 auto; min-width:0}
+  .ba-left .panel, .ba-left .stat, .ba-right .panel{max-width:none; margin-left:0; margin-right:0}
+  @media (max-width: 860px){
+    .ba-columns{display:block}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>만찬경매</h1>
+  <h1>차례상 경매</h1>
   <p class="sub">한가위 팔도 유람마블 · 2부 참가자 화면</p>
 
   <div id="joinPanel" class="panel">
@@ -137,81 +149,85 @@
     <!-- 진행 중 화면 -->
     <div id="gameBoard" class="hidden">
 
-      <div id="biddingArea" class="hidden">
-        <div class="roundcard">
-          <div class="mystery">❓</div>
-          <div class="rtitle" id="roundTitle">미공개 품목 - / 14</div>
-          <div class="timer" id="roundTimer">--:--</div>
-          <div class="bidline" id="bidLine">아직 입찰이 없습니다. 시작가 -</div>
-          <div id="passedNotice" class="hidden" style="font-size:13px; color:#9d97c2; margin:2px 0 10px">이번 품목은 입찰을 포기했습니다. 다음 품목부터 다시 참여할 수 있어요.</div>
-          <div id="maxedNotice" class="hidden" style="font-size:13px; color:#9d97c2; margin:2px 0 10px">이미 품목을 최대 개수만큼 낙찰받아 더 이상 입찰할 수 없습니다.</div>
-          <div id="bidControls">
-            <div class="bidbtns" id="bidBtns"></div>
-            <div class="manualbid-row">
-              <input id="manualBidInput" type="number" inputmode="numeric" min="0" step="10000" placeholder="직접 금액 입력" />
-              <button id="manualBidBtn" class="secondary" type="button">입찰</button>
+      <div class="ba-columns">
+        <div class="ba-left">
+          <div id="biddingArea" class="hidden">
+            <div class="roundcard">
+              <div class="mystery">❓</div>
+              <div class="rtitle" id="roundTitle">미공개 품목 - / 14</div>
+              <div class="timer" id="roundTimer">--:--</div>
+              <div class="bidline" id="bidLine">아직 입찰이 없습니다. 시작가 -</div>
+              <div id="passedNotice" class="hidden" style="font-size:13px; color:#9d97c2; margin:2px 0 10px">이번 품목은 입찰을 포기했습니다. 다음 품목부터 다시 참여할 수 있어요.</div>
+              <div id="maxedNotice" class="hidden" style="font-size:13px; color:#9d97c2; margin:2px 0 10px">이미 품목을 최대 개수만큼 낙찰받아 더 이상 입찰할 수 없습니다.</div>
+              <div id="bidControls">
+                <div class="bidbtns" id="bidBtns"></div>
+                <div class="manualbid-row">
+                  <input id="manualBidInput" type="number" inputmode="numeric" min="0" step="10000" placeholder="직접 금액 입력" />
+                  <button id="manualBidBtn" class="secondary" type="button">입찰</button>
+                </div>
+                <button id="passBidBtn" class="danger" type="button">이번 품목 포기</button>
+              </div>
             </div>
-            <button id="passBidBtn" class="danger" type="button">이번 품목 포기</button>
+            <div id="bidMsg" class="err hidden"></div>
+          </div>
+
+          <div id="roundResultBanner" class="panel hidden" style="text-align:center; border-color:var(--gold)">
+            <h2 style="margin-bottom:4px" id="resultTitle">공개!</h2>
+            <div class="itemgrid" id="resultThumbWrap" style="max-width:120px; margin:6px auto"></div>
+            <p style="font-size:16px; font-weight:700; margin:8px 0 2px" id="resultWinnerLine"></p>
+            <p class="sub" style="margin:0" id="resultPriceLine"></p>
+            <p class="sub" style="margin:10px 0 0" id="resultNextLine"></p>
+            <div id="nextRoundBox" class="hidden" style="margin-top:10px">
+              <button id="nextRoundBtn">다음 품목 시작</button>
+            </div>
+          </div>
+
+          <div id="tableReviewBanner" class="panel hidden" style="text-align:center">
+            <h2 style="margin-bottom:4px">경매 종료!</h2>
+            <p class="sub" style="margin:0">완성된 차례상으로 곧 시청자 투표가 시작됩니다. 잠시만 기다려주세요.</p>
+            <div id="startVoteBox" class="hidden" style="margin-top:10px">
+              <button id="startVoteBtn">투표 열기</button>
+            </div>
+          </div>
+
+          <div id="votingBanner" class="panel hidden" style="text-align:center">
+            <h2 style="margin-bottom:4px">시청자 투표 진행 중</h2>
+            <div class="timer" id="voteTimer">--:--</div>
+            <p class="sub" style="margin:6px 0 0">완성된 차례상에 시청자들이 투표하고 있습니다.</p>
+            <div id="closeVoteBox" class="hidden" style="margin-top:10px">
+              <button id="closeVoteBtn" class="danger">지금 바로 투표 마감</button>
+            </div>
+          </div>
+
+          <div id="rankPanel" class="panel hidden">
+            <h2>최종 결과</h2>
+            <table class="ranktable">
+              <thead><tr><th>순위</th><th>이름</th><th class="num">득표</th></tr></thead>
+              <tbody id="rankBody"></tbody>
+            </table>
+            <p class="sub" style="margin:10px 0 0">경품은 사람 참가자에게만 지급됩니다.</p>
+          </div>
+
+          <div class="stat"><div class="lbl">내 자금</div><div class="val" id="myCash">-</div></div>
+          <div class="stat"><div class="lbl">낙찰 품목</div><div class="val" id="myItemCount">0 / 5</div></div>
+        </div>
+
+        <div class="ba-right">
+          <div class="panel panel-wide">
+            <h2>내 차례상 <span id="myItemsHeading" style="color:#9d97c2; font-weight:400; font-size:12.5px"></span></h2>
+            <div class="itemgrid" id="myItems"></div>
+          </div>
+
+          <div class="panel panel-wide">
+            <h2>품목 목록 (14개 · 낙찰 전까지 정체 비공개)</h2>
+            <div class="itemgrid" id="itemLegend"></div>
+          </div>
+
+          <div class="panel panel-wide">
+            <h2>다른 참가자</h2>
+            <div class="oppgrid" id="oppGrid"></div>
           </div>
         </div>
-        <div id="bidMsg" class="err hidden"></div>
-      </div>
-
-      <div id="roundResultBanner" class="panel hidden" style="text-align:center; border-color:var(--gold)">
-        <h2 style="margin-bottom:4px" id="resultTitle">공개!</h2>
-        <div class="itemgrid" id="resultThumbWrap" style="max-width:120px; margin:6px auto"></div>
-        <p style="font-size:16px; font-weight:700; margin:8px 0 2px" id="resultWinnerLine"></p>
-        <p class="sub" style="margin:0" id="resultPriceLine"></p>
-        <p class="sub" style="margin:10px 0 0" id="resultNextLine"></p>
-        <div id="nextRoundBox" class="hidden" style="margin-top:10px">
-          <button id="nextRoundBtn">다음 품목 시작</button>
-        </div>
-      </div>
-
-      <div id="tableReviewBanner" class="panel hidden" style="text-align:center">
-        <h2 style="margin-bottom:4px">경매 종료!</h2>
-        <p class="sub" style="margin:0">완성된 차례상으로 곧 시청자 투표가 시작됩니다. 잠시만 기다려주세요.</p>
-        <div id="startVoteBox" class="hidden" style="margin-top:10px">
-          <button id="startVoteBtn">투표 열기</button>
-        </div>
-      </div>
-
-      <div id="votingBanner" class="panel hidden" style="text-align:center">
-        <h2 style="margin-bottom:4px">시청자 투표 진행 중</h2>
-        <div class="timer" id="voteTimer">--:--</div>
-        <p class="sub" style="margin:6px 0 0">완성된 차례상에 시청자들이 투표하고 있습니다.</p>
-        <div id="closeVoteBox" class="hidden" style="margin-top:10px">
-          <button id="closeVoteBtn" class="danger">지금 바로 투표 마감</button>
-        </div>
-      </div>
-
-      <div id="rankPanel" class="panel hidden">
-        <h2>최종 결과</h2>
-        <table class="ranktable">
-          <thead><tr><th>순위</th><th>이름</th><th class="num">득표</th></tr></thead>
-          <tbody id="rankBody"></tbody>
-        </table>
-        <p class="sub" style="margin:10px 0 0">경품은 사람 참가자에게만 지급됩니다.</p>
-      </div>
-
-      <div class="panel">
-        <div class="stat"><div class="lbl">내 자금</div><div class="val" id="myCash">-</div></div>
-        <div class="stat"><div class="lbl">낙찰 품목</div><div class="val" id="myItemCount">0 / 5</div></div>
-      </div>
-
-      <div class="panel panel-wide">
-        <h2>내 차례상 <span id="myItemsHeading" style="color:#9d97c2; font-weight:400; font-size:12.5px"></span></h2>
-        <div class="itemgrid" id="myItems"></div>
-      </div>
-
-      <div class="panel panel-wide">
-        <h2>품목 목록 (14개 · 낙찰 전까지 정체 비공개)</h2>
-        <div class="itemgrid" id="itemLegend"></div>
-      </div>
-
-      <div class="panel panel-wide">
-        <h2>다른 참가자</h2>
-        <div class="oppgrid" id="oppGrid"></div>
       </div>
 
       <div class="panel panel-wide">
