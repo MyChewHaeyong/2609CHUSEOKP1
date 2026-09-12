@@ -46,7 +46,12 @@
   .sb-tile .sb-owner{font-size:9px; color:var(--gold); margin-top:1px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .sb-tokens{display:flex; gap:2px; margin-top:2px; flex-wrap:wrap; justify-content:center}
   .sb-token{width:15px; height:15px; border-radius:50%; border:1px solid var(--panel); display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1}
-  .sb-center{position:absolute; left:15%; top:15%; right:15%; bottom:15%; display:flex; align-items:center; justify-content:center; text-align:center; border:1px dashed var(--line); border-radius:14px}
+  .sb-center{position:absolute; left:15%; top:15%; right:15%; bottom:15%; display:flex; align-items:center; justify-content:center; text-align:center; border:1px dashed var(--line); border-radius:14px; overflow:hidden}
+  /* 보드 가운데 배경 이미지 — 지금은 파일이 없어 항상 숨겨지고 기존 모습 그대로 나옴.
+     public/board/center.png(정사각형 1:1 권장)를 저장소에 올리면 코드 수정 없이 자동으로 적용됨. */
+  .sb-center-img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.55}
+  .sb-center-shade{position:absolute; inset:0; background:linear-gradient(180deg, rgba(22,15,46,.25), rgba(22,15,46,.78))}
+  .sb-center-inner{position:relative; z-index:1}
   .sb-center-inner .who{font-size:20px; font-weight:700; color:var(--gold)}
   .sb-center-inner .what{font-size:13px; color:#cfcbea; margin-top:6px}
   .sb-center-inner .timer{margin-top:14px; font-size:16px; font-family:monospace}
@@ -72,7 +77,11 @@
     <div class="grid" id="grid"></div>
 
     <div id="boardWrap" class="squareboard">
-      <div class="sb-center"><div class="sb-center-inner" id="sbCenterInner"></div></div>
+      <div class="sb-center">
+        <img class="sb-center-img" src="/board/center.png" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='none'" />
+        <div class="sb-center-shade"></div>
+        <div class="sb-center-inner" id="sbCenterInner"></div>
+      </div>
     </div>
     <div class="legend">
       <span><i style="background:#4E7D57"></i>충청권</span>
