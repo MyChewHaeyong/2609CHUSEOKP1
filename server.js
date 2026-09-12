@@ -6,7 +6,7 @@ const crypto = require("crypto");
 const express = require("express");
 const Database = require("better-sqlite3");
 const Game = require("./game.js");
-const Game2 = require("./game2.js"); // 2부 만찬경매
+const Game2 = require("./game2.js"); // 2부 차례상 경매
 const SoopConnector = require("./soopConnector.js"); // 후원 효과: SOOP 자동 감지(보조 수단)
 
 const app = express();
@@ -160,7 +160,7 @@ function tollPlainPreviewFor(state, t) {
   return preview;
 }
 
-// 2부(만찬경매) state.phase를 rooms.status 컬럼(waiting/playing/ended)으로 매핑.
+// 2부(차례상 경매) state.phase를 rooms.status 컬럼(waiting/playing/ended)으로 매핑.
 // 1부의 undo 버그 수정 때와 같은 이유로, 상태를 저장할 때마다 항상 이 매핑을 같이 갱신해야
 // join 가능 여부(waiting 체크) 등이 화면과 어긋나지 않습니다.
 function auctionStatusFor(phase) {
@@ -286,7 +286,7 @@ app.get("/api/rooms/:code/state", (req, res) => {
     if (p && p.token === token) touchPlayer(playerId);
   }
 
-  // 2부(만찬경매)는 실시간 타이머(품목당 5분, 투표 5분)가 있어서, 클라이언트가 폴링할 때마다
+  // 2부(차례상 경매)는 실시간 타이머(품목당 5분, 투표 5분)가 있어서, 클라이언트가 폴링할 때마다
   // 마감 시간이 지났는지 확인해 필요하면 여기서 즉시 처리합니다(별도 스케줄러 없이, 1부의
   // 90분 통행료 인상 타이머와 같은 "읽을 때 계산" 방식). adminKey가 맞으면 관리자 전용 정보
   // (투표 중 실시간 득표수)도 함께 내려줍니다.
@@ -542,7 +542,7 @@ app.post("/api/rooms/:code/admin/start-game", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 2부 만찬경매 — 1부와 같은 방/입장/캐릭터 선택 엔진을 그대로 재사용하고,
+// 2부 차례상 경매 — 1부와 같은 방/입장/캐릭터 선택 엔진을 그대로 재사용하고,
 // 게임 로직만 game2.js로 분리했습니다.
 
 // 2부 경매 시작: 1부와 동일하게 부족한 자리는 BOT으로 채우고, 각 사람 참가자에게 1부 등수
@@ -557,7 +557,7 @@ app.get("/api/rooms/:code/admin/part1-preview", (req, res) => {
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
   if (!requireAdmin(req, res, room)) return;
   if (room.game_mode !== "auction") {
-    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+    return res.status(400).json({ ok: false, error: "이 방은 차례상 경매 방이 아닙니다." });
   }
   const part1RoomCode = String(req.query.part1RoomCode || "").toUpperCase();
   const part1Room = getRoom(part1RoomCode);
@@ -583,7 +583,7 @@ app.post("/api/rooms/:code/admin/start-auction", (req, res) => {
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
   if (!requireAdmin(req, res, room)) return;
   if (room.game_mode !== "auction") {
-    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+    return res.status(400).json({ ok: false, error: "이 방은 차례상 경매 방이 아닙니다." });
   }
   const existing = JSON.parse(room.state_json);
   if (existing.phase && existing.phase !== "waiting") {
@@ -689,7 +689,7 @@ app.post("/api/rooms/:code/admin/next-round", (req, res) => {
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
   if (!requireAdmin(req, res, room)) return;
   if (room.game_mode !== "auction") {
-    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+    return res.status(400).json({ ok: false, error: "이 방은 차례상 경매 방이 아닙니다." });
   }
   const state = JSON.parse(room.state_json);
   try {
@@ -707,7 +707,7 @@ app.post("/api/rooms/:code/admin/start-vote", (req, res) => {
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
   if (!requireAdmin(req, res, room)) return;
   if (room.game_mode !== "auction") {
-    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+    return res.status(400).json({ ok: false, error: "이 방은 차례상 경매 방이 아닙니다." });
   }
   const state = JSON.parse(room.state_json);
   Game2.tick(state, now());
@@ -726,7 +726,7 @@ app.post("/api/rooms/:code/admin/close-vote", (req, res) => {
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
   if (!requireAdmin(req, res, room)) return;
   if (room.game_mode !== "auction") {
-    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+    return res.status(400).json({ ok: false, error: "이 방은 차례상 경매 방이 아닙니다." });
   }
   const state = JSON.parse(room.state_json);
   try {
@@ -745,7 +745,7 @@ app.post("/api/rooms/:code/vote", (req, res) => {
   const room = getRoom(req.params.code);
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
   if (room.game_mode !== "auction") {
-    return res.status(400).json({ ok: false, error: "이 방은 만찬경매 방이 아닙니다." });
+    return res.status(400).json({ ok: false, error: "이 방은 차례상 경매 방이 아닙니다." });
   }
   const { voterToken, targetPlayerId } = req.body || {};
   if (!voterToken || !targetPlayerId) {
