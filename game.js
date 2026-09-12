@@ -517,12 +517,14 @@ function wouldCompleteRegion(state, playerId, tile) {
 
 function maybeBotBuild(state, playerId) {
   const p = state.players[playerId];
-  // 별장/호텔은 이제 단계식이 아니라 각자 독립적으로 지을 수 있고, 권역을 전부 소유해야
-  // 한다는 조건도 없습니다(사용자 확정 사항: "자금 여력에 따라 구매 가능"). 자금만 되면
-  // 별장/호텔을 각각(둘 다 없다면 한 턴에 둘 다도 가능) 지을 수 있습니다.
-  for (const pos of Object.keys(state.properties).map(Number)) {
-    const prop = state.properties[pos];
-    if (prop.ownerId !== playerId) continue;
+  // 별장/호텔은 단계식이 아니라 각자 독립적으로 지을 수 있고, 권역을 전부 소유해야 한다는
+  // 조건도 없습니다(사용자 확정 사항: "자금 여력에 따라 구매 가능"). 다만 건설은 지금 그
+  // 칸에 있을 때만 할 수 있다는 규칙(사용자 확정 사항: "내 차례에 해당 도시의 칸에 있어야만
+  // 건설 가능")은 BOT에게도 똑같이 적용해서, 사람과 형평성이 어긋나지 않게 합니다 — 그래서
+  // 소유한 모든 땅이 아니라 지금 BOT이 서 있는 칸 하나만 검사합니다.
+  const pos = p.position;
+  const prop = state.properties[pos];
+  if (prop && prop.ownerId === playerId) {
     const tile = TILES[pos];
     const cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
     if (!prop.villa && p.cash - cost >= 20000) {
@@ -645,6 +647,10 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       if (!tile || tile.type !== "city") throw new Error("건설할 수 없는 칸입니다.");
       const prop = state.properties[pos];
       if (!prop || prop.ownerId !== playerId) throw new Error("본인 소유의 땅이 아닙니다.");
+      // 건설은 지금 내가 그 칸에 있을 때만 할 수 있습니다(사용자 확정 사항: "내 차례에 해당
+      // 도시의 칸에 있어야만 건설 가능"). 다른 칸에 있으면서 예전에 사둔 땅을 원격으로
+      // 건설하는 것은 더 이상 허용하지 않습니다.
+      if (p.position !== pos) throw new Error("지금 그 칸에 있어야 건설할 수 있습니다.");
       // 별장/호텔은 단계식으로 거치지 않고 각각 독립적으로 지을 수 있으며(사용자 확정 사항:
       // "자금 여력에 따라 구매 가능"), 권역을 전부 소유해야 한다는 조건도 없습니다.
       // 한 칸에는 별장·호텔을 각각 최대 1개씩(동시에) 보유할 수 있습니다.
