@@ -239,7 +239,7 @@
       </div>
 
       <div class="panel hidden" id="myPropsPanel">
-        <h2>내 소유 도시 <span style="font-weight:400; color:#9d97c2; font-size:11px">(항상 표시 · 건설/매각은 내 턴에서만 가능)</span></h2>
+        <h2>내 소유 도시 <span style="font-weight:400; color:#9d97c2; font-size:11px">(항상 표시 · 매각은 내 턴에서만, 건설은 내 턴에 그 칸에 있을 때만 가능)</span></h2>
         <div id="myPropsList"></div>
       </div>
 
@@ -721,7 +721,10 @@
     // 실제로 달라졌을 때만 다시 그립니다. 건설 버튼의 활성/비활성이 현금(cash)에 따라
     // 바뀌므로(요청: "자금 부족 시 버튼은 보이되 비활성화") 현금도 신호에 포함합니다.
     const cashNow = me ? me.cash : 0;
-    const key = canAct + "|" + hasHalfBuild + "|" + cashNow + "|" + myPositions.map((pos) => pos + ":" + JSON.stringify(state.properties[pos])).join(",");
+    const myPosNow = me ? me.position : null;
+    // 건설 가능 여부가 지금 내가 서 있는 칸(myPosNow)에도 좌우되므로(요청: "내 차례에 해당
+    // 도시의 칸에 있어야만 건설 가능") 이것도 신호에 포함합니다.
+    const key = canAct + "|" + hasHalfBuild + "|" + cashNow + "|" + myPosNow + "|" + myPositions.map((pos) => pos + ":" + JSON.stringify(state.properties[pos])).join(",");
     if (key === lastMyPropsKey) return;
     lastMyPropsKey = key;
 
@@ -742,18 +745,23 @@
         const cost = Math.round(tile.price * 0.5);
         const me2 = state.players[session.playerId];
         const cash = me2 ? me2.cash : 0;
+        // 건설은 지금 내가 그 칸에 있을 때만 할 수 있습니다(요청: "내 차례에 해당 도시의
+        // 칸에 있어야만 건설 가능"). 다른 칸은 버튼을 감추지 않고 사유와 함께 비활성화만
+        // 해서, 나중에 그 칸에 다시 오면 얼마가 필요한지 미리 볼 수 있게 둡니다.
+        const notHere = me2 && me2.position !== pos;
+        const hereReason = "지금 이 칸에 있어야 건설할 수 있습니다";
         if (!prop.villa) {
-          row.appendChild(makeSmallBtn("별장 건설 (" + fmt(cost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa" }), false, cash < cost));
+          row.appendChild(makeSmallBtn("별장 건설 (" + fmt(cost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa" }), false, notHere ? hereReason : cash < cost));
           if (hasHalfBuild) {
             const halfCost = Math.round(cost * 0.5);
-            row.appendChild(makeSmallBtn("별장 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa", useItem: true }), true, cash < halfCost));
+            row.appendChild(makeSmallBtn("별장 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa", useItem: true }), true, notHere ? hereReason : cash < halfCost));
           }
         }
         if (!prop.hotel) {
-          row.appendChild(makeSmallBtn("호텔 건설 (" + fmt(cost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel" }), false, cash < cost));
+          row.appendChild(makeSmallBtn("호텔 건설 (" + fmt(cost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel" }), false, notHere ? hereReason : cash < cost));
           if (hasHalfBuild) {
             const halfCost = Math.round(cost * 0.5);
-            row.appendChild(makeSmallBtn("호텔 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel", useItem: true }), true, cash < halfCost));
+            row.appendChild(makeSmallBtn("호텔 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel", useItem: true }), true, notHere ? hereReason : cash < halfCost));
           }
         }
         // 매각도 단계별로 순서대로 내려가지 않고, 별장/호텔/땅 중 원하는 것만 골라 매각합니다
@@ -954,11 +962,13 @@
     b.addEventListener("click", onClick);
     return b;
   }
+  // disabled: true(또는 문자열)면 비활성화. 문자열을 넘기면 그 사유를 그대로 툴팁으로
+  // 보여주고, 그냥 true만 넘기면 기본 사유("자금이 부족합니다")를 보여줍니다.
   function makeSmallBtn(label, onClick, secondary, disabled) {
     const b = makeBtn(label, onClick, secondary);
     if (disabled) {
       b.disabled = true;
-      b.title = "자금이 부족합니다";
+      b.title = typeof disabled === "string" ? disabled : "자금이 부족합니다";
     }
     return b;
   }
