@@ -71,6 +71,8 @@
   .drd-delta{font-size:15px; font-weight:700; color:var(--cream)}
   .drd-delta.drd-plus{color:#7CC98A}
   .drd-delta.drd-minus{color:var(--danger, #E5867A)}
+  .mystats .val.rate-pos{color:#7CC98A}
+  .mystats .val.rate-neg{color:var(--danger, #E5867A)}
   .drd-lines{margin-top:4px; font-size:12px; color:#cfcbea; line-height:1.5}
 
   /* 캐릭터 아바타 — 지금은 이모지로 표시하고, 나중에 public/characters/char1~4.png를
@@ -226,6 +228,9 @@
         <div class="stat"><div class="lbl">내 위치</div><div class="val" id="myPos">-</div></div>
         <div class="stat"><div class="lbl">송편 토큰</div><div class="val" id="mySongpyeon">-</div></div>
         <div class="stat"><div class="lbl">보유 아이템</div><div class="val" id="myItems">-</div></div>
+        <!-- 요청: "플레이어가 자신에게 적용된 보정률을 확인할 수 있도록" — 통행료에만
+             적용되는 내 채널의 누적 후원 효과 보정률을 항상 볼 수 있게 표시합니다. -->
+        <div class="stat"><div class="lbl">내 후원 보정률</div><div class="val" id="myDonationRate">-</div></div>
       </div>
 
       <div class="panel hidden" id="actionPanel">
@@ -590,6 +595,27 @@
     $("myItems").textContent = me.items && me.items.length
       ? me.items.map((i) => ITEM_LABEL[i] || i).join(", ")
       : "없음";
+    renderMyDonationRate(state);
+  }
+
+  // 내 채널의 누적 후원 효과 보정률(통행료 계산에만 반영됨)을 항상 볼 수 있게 표시합니다
+  // (요청: "플레이어가 자신에게 적용된 보정률을 확인할 수 있도록"). 후원 효과가 방 전체
+  // 스위치로 꺼져 있어도 누적치 자체는 계속 쌓이므로(사용자 확정 사항), 그 경우엔 값은
+  // 그대로 보여주되 "지금은 적용 안 됨"임을 함께 알려줍니다.
+  function renderMyDonationRate(state) {
+    const el = $("myDonationRate");
+    if (!el) return;
+    const de = state.donationEffects && state.donationEffects[session.playerId];
+    const rate = de ? de.cumulativeRate : 0;
+    const pct = Math.round(rate * 1000) / 10;
+    const sign = pct > 0 ? "+" : "";
+    let text = sign + pct.toFixed(1) + "%";
+    el.className = "val" + (pct > 0 ? " rate-pos" : pct < 0 ? " rate-neg" : "");
+    if (state.donationEnabled === false) {
+      text += " (효과 꺼짐)";
+      el.className = "val";
+    }
+    el.textContent = text;
   }
 
   function renderActionPanel(state) {
