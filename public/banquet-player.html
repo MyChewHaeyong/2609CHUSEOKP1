@@ -68,6 +68,8 @@
   .stat{background:#1a1733; border:1px solid var(--line); border-radius:8px; padding:9px 11px; margin-bottom:8px}
   .stat .lbl{font-size:11px; color:#9d97c2}
   .stat .val{font-size:16px; font-weight:700; color:var(--cream); margin-top:2px}
+  .stat .val.rate-pos{color:#7CC98A}
+  .stat .val.rate-neg{color:var(--danger, #E5867A)}
 
   .oppgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px}
   .oppcard{background:#1a1733; border:1px solid var(--line); border-radius:10px; padding:10px}
@@ -210,6 +212,9 @@
 
           <div class="stat"><div class="lbl">내 자금</div><div class="val" id="myCash">-</div></div>
           <div class="stat"><div class="lbl">낙찰 품목</div><div class="val" id="myItemCount">0 / 5</div></div>
+          <!-- 요청: "플레이어가 자신에게 적용된 보정률을 확인할 수 있도록" — 낙찰가 결제에만
+               적용되는 내 채널의 누적 후원 효과 보정률을 항상 볼 수 있게 표시합니다. -->
+          <div class="stat"><div class="lbl">내 후원 보정률</div><div class="val" id="myDonationRate">-</div></div>
         </div>
 
         <div class="ba-right">
@@ -471,6 +476,7 @@
     $("myCash").textContent = me ? fmt(me.cash) + " 원" : "-";
     $("myItemCount").textContent = myCount + " / " + maxItems;
     $("myItemsHeading").textContent = "(" + myCount + " / " + maxItems + ")";
+    renderMyDonationRate(me, st.donationEnabled);
     renderMyItems(me);
     renderItemLegend(st.publicItemList || [], st.itemResults || []);
     renderOpponents(players, st.players || {}, maxItems);
@@ -623,6 +629,25 @@
     if (e.key === "Enter") submitManualBid();
   });
   $("passBidBtn").addEventListener("click", passBid);
+
+  // 내 채널의 누적 후원 효과 보정률(낙찰가 결제에만 반영됨)을 항상 볼 수 있게 표시합니다
+  // (요청: "플레이어가 자신에게 적용된 보정률을 확인할 수 있도록"). serializeForClient가
+  // 모든 참가자에게 항상 내려주는 값이라 별도 API 호출 없이 그대로 씁니다. 방 전체 스위치로
+  // 꺼져 있어도 누적치는 계속 쌓이므로(사용자 확정 사항), 그 경우엔 값은 보여주되 지금은
+  // 적용되지 않는다는 것도 함께 알려줍니다.
+  function renderMyDonationRate(me, donationEnabled) {
+    const el = $("myDonationRate");
+    if (!el) return;
+    const pct = me && me.donationEffect ? me.donationEffect.cumulativeRatePct : 0;
+    const sign = pct > 0 ? "+" : "";
+    let text = sign + pct.toFixed(1) + "%";
+    el.className = "val" + (pct > 0 ? " rate-pos" : pct < 0 ? " rate-neg" : "");
+    if (donationEnabled === false) {
+      text += " (효과 꺼짐)";
+      el.className = "val";
+    }
+    el.textContent = text;
+  }
 
   function renderMyItems(me) {
     const el = $("myItems");
