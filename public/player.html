@@ -97,6 +97,8 @@
   .sb-tile.start{background:color-mix(in srgb, var(--gold) 28%, #1a1733)}
   .sb-tile.event{background:color-mix(in srgb, #6C5D8A 30%, #1a1733)}
   .sb-tile.here{box-shadow:0 0 0 2px var(--gold) inset}
+  /* 내가 지금 위치한 칸은 다른 참가자 위치(금색)와 구분되도록 초록색 테두리로 강조 */
+  .sb-tile.mine-here{box-shadow:0 0 0 3px #4CAF50 inset; border-color:#4CAF50}
   .sb-tile.selected{border-color:var(--gold)}
   /* 칸별 배경 이미지 — 지금은 이미지가 없어서 항상 안 보이고 기존 색상 배경 그대로 나옴.
      나중에 public/tiles/tile0.png ~ tile20.png(칸 번호 = TILES 배열의 pos값)를 저장소에
@@ -229,11 +231,15 @@
       <div class="panel hidden" id="actionPanel">
         <h2>내 차례</h2>
         <div id="actionArea"></div>
+        <!-- 주사위를 굴린 시점부터 이번 턴이 끝날 때까지(구매/건설/통행료/이벤트 처리 포함)
+             누적된 수입·지출을 계속 보여주는 박스. actionArea처럼 단계가 바뀔 때마다
+             통째로 지워지면 안 되므로 별도의 고정 요소로 둡니다. -->
+        <div id="diceResultDetail" class="dice-result-detail hidden"></div>
         <div id="actionMsg" class="err hidden"></div>
       </div>
 
       <div class="panel hidden" id="myPropsPanel">
-        <h2>내 소유 도시 (턴 종료 전 건설/매각 가능)</h2>
+        <h2>내 소유 도시 <span style="font-weight:400; color:#9d97c2; font-size:11px">(항상 표시 · 건설/매각은 내 턴에서만 가능)</span></h2>
         <div id="myPropsList"></div>
       </div>
 
@@ -317,6 +323,10 @@
   ];
   let selectedPos = null;
   let lastBoardState = null;
+  // 이번 턴에 주사위를 굴린 시점의 내 현금/로그 길이 기준점 — 구매/건설/통행료/이벤트 처리를
+  // 거치는 동안 계속 이 기준점과 비교해서 "이번 턴 전체"의 누적 수입/지출을 보여줍니다.
+  // 내 턴이 아니게 되거나 새로 주사위를 굴리기 전(awaiting-roll) 단계로 돌아오면 null로 리셋.
+  let turnResultBaseline = null;
   let lastTolls = {}; // { [칸 번호]: 현재 통행료 } — 서버가 game.js의 tollFor()로 직접 계산해서 내려줌
   let lastTollsPlain = {}; // { [칸 번호]: 후원 효과를 적용하지 않은 원래 통행료 } — tollForPlain()로 계산
   // 칸이 정사각형 테두리(0~100%)에 딱 붙으면 칸의 절반이 컨테이너 밖으로 잘려서 안 보이므로,
@@ -330,7 +340,7 @@
     { pos:0, name:"귀성길 출발", type:"start" },
     { pos:1, name:"대전", type:"city", region:"cc", price:30000 },
     { pos:2, name:"세종", type:"city", region:"cc", price:35000 },
-    { pos:3, name:"전통시장", type:"event", eventType:"market" },
+    { pos:3, name:"복주머니", type:"event", eventType:"market" },
     { pos:4, name:"청주", type:"city", region:"cc", price:40000 },
     { pos:5, name:"친척집", type:"event", eventType:"relative" },
     { pos:6, name:"광주", type:"city", region:"jl", price:45000 },
@@ -586,6 +596,19 @@
     const panel = $("actionPanel");
     const isMyTurn = state.phase === "playing" && state.currentPlayerId === session.playerId;
     panel.classList.toggle("hidden", !isMyTurn);
+
+    // 이번 턴 누적 수입/지출 박스 갱신: 내 턴이 아니게 되거나 새로 주사위를 굴리기 전
+    // 단계(awaiting-roll)로 돌아오면 리셋하고, 그 사이(구매/건설/통행료/이벤트/턴마무리
+    // 단계)에는 매 폴링마다 기준점 대비 누적치로 다시 그려서 구매·건설비 지출, 통행료
+    // 수입/지출, 이벤트칸 결과까지 전부 같은 박스에 계속 반영되게 합니다.
+    const detailEl = $("diceResultDetail");
+    if (!isMyTurn || state.turnPhase === "awaiting-roll") {
+      turnResultBaseline = null;
+      if (detailEl) detailEl.classList.add("hidden");
+    } else if (turnResultBaseline && detailEl && !busy) {
+      renderDiceResultDetail(turnResultBaseline.cash, turnResultBaseline.logLen, state);
+    }
+
     if (!isMyTurn) return;
     // 액션 처리 중(특히 주사위 굴리는 애니메이션 도중)에는 1초 폴링이 이 영역을 다시 그리지 않게 함
     // — 안 그러면 애니메이션이 도는 도중에 매초 주사위가 처음 상태로 리셋되어버림.
@@ -629,7 +652,7 @@
     if (ev.type === "market") {
       const card = document.createElement("div");
       card.className = "tilecard";
-      card.innerHTML = '<div class="tname">전통시장 카드 뒤집기</div><div class="tinfo">3장 중 1장을 골라 뒤집으세요. 결과가 바로 적용됩니다.</div>';
+      card.innerHTML = '<div class="tname">복주머니 카드 뒤집기</div><div class="tinfo">3장 중 1장을 골라 뒤집으세요. 결과가 바로 적용됩니다.</div>';
       wrap.appendChild(card);
       const row = document.createElement("div");
       row.className = "btnrow";
@@ -679,40 +702,72 @@
     return wrap;
   }
 
+  let lastMyPropsKey = null;
   function renderMyProps(state) {
     const panel = $("myPropsPanel");
-    const isMyTurn = state.phase === "playing" && state.currentPlayerId === session.playerId && state.turnPhase === "awaiting-endturn";
+    // 내가 땅을 하나라도 갖고 있으면 내 차례가 아니어도 항상 목록을 볼 수 있게 합니다
+    // (요청: "내 창에서는 내 차례가 아니더라도 고정으로 볼 수 있도록"). 다만 건설/매각
+    // 같은 실제 행동 버튼은 규칙상 내 턴(턴 마무리 단계)일 때만 보여줍니다.
+    const canAct = state.phase === "playing" && state.currentPlayerId === session.playerId && state.turnPhase === "awaiting-endturn";
     const myPositions = Object.keys(state.properties || {})
       .map(Number)
       .filter((pos) => state.properties[pos].ownerId === session.playerId);
-    panel.classList.toggle("hidden", !isMyTurn || myPositions.length === 0);
-    if (!isMyTurn || myPositions.length === 0) return;
+    panel.classList.toggle("hidden", myPositions.length === 0);
+    if (myPositions.length === 0) { lastMyPropsKey = null; return; }
 
     const me = state.players[session.playerId];
     const hasHalfBuild = !!(me && me.items && me.items.includes("half-build"));
+    // 내 턴이 아닐 때는 매초 폴링마다 다시 그릴 필요가 없으므로(내용이 안 바뀜), 신호가
+    // 실제로 달라졌을 때만 다시 그립니다. 건설 버튼의 활성/비활성이 현금(cash)에 따라
+    // 바뀌므로(요청: "자금 부족 시 버튼은 보이되 비활성화") 현금도 신호에 포함합니다.
+    const cashNow = me ? me.cash : 0;
+    const key = canAct + "|" + hasHalfBuild + "|" + cashNow + "|" + myPositions.map((pos) => pos + ":" + JSON.stringify(state.properties[pos])).join(",");
+    if (key === lastMyPropsKey) return;
+    lastMyPropsKey = key;
+
     const list = $("myPropsList");
     list.innerHTML = "";
     myPositions.forEach((pos) => {
       const tile = TILES[pos];
       const prop = state.properties[pos];
-      const ownsRegionAll = TILES.filter((t) => t.type === "city" && t.region === tile.region)
-        .every((t) => state.properties[t.pos] && state.properties[t.pos].ownerId === session.playerId);
       const row = document.createElement("div");
       row.className = "proprow";
-      const buildLabel = prop.building === "hotel" ? "호텔" : prop.building === "villa" ? "별장" : "빈 땅";
+      // 별장/호텔은 이제 단계식이 아니라 각각 독립적으로(최대 1개씩, 동시에) 지을 수 있고,
+      // 권역을 모두 소유해야 한다는 조건도 없습니다 — 자금만 되면 지을 수 있습니다
+      // (사용자 확정 사항: "자금 여력에 따라 구매 가능"). 그래서 버튼도 감추지 않고 항상
+      // 보여주되, 자금이 부족할 때만 비활성화합니다(요청: "건설 버튼은 보이지만 비활성화").
+      const buildLabel = (prop.villa ? "별장" : "") + (prop.hotel ? (prop.villa ? "+호텔" : "호텔") : "") || "빈 땅";
       row.innerHTML = '<span class="pn">' + tile.name + " (" + buildLabel + ")</span>";
-      if (ownsRegionAll && prop.building === "none") {
-        row.appendChild(makeSmallBtn("별장 건설", () => sendAction("build", { tilePos: pos, level: "villa" })));
-        if (hasHalfBuild) {
-          row.appendChild(makeSmallBtn("별장 건설 (반값권 사용)", () => sendAction("build", { tilePos: pos, level: "villa", useItem: true }), true));
+      if (canAct) {
+        const cost = Math.round(tile.price * 0.5);
+        const me2 = state.players[session.playerId];
+        const cash = me2 ? me2.cash : 0;
+        if (!prop.villa) {
+          row.appendChild(makeSmallBtn("별장 건설 (" + fmt(cost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa" }), false, cash < cost));
+          if (hasHalfBuild) {
+            const halfCost = Math.round(cost * 0.5);
+            row.appendChild(makeSmallBtn("별장 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa", useItem: true }), true, cash < halfCost));
+          }
         }
-      } else if (ownsRegionAll && prop.building === "villa") {
-        row.appendChild(makeSmallBtn("호텔 건설", () => sendAction("build", { tilePos: pos, level: "hotel" })));
-        if (hasHalfBuild) {
-          row.appendChild(makeSmallBtn("호텔 건설 (반값권 사용)", () => sendAction("build", { tilePos: pos, level: "hotel", useItem: true }), true));
+        if (!prop.hotel) {
+          row.appendChild(makeSmallBtn("호텔 건설 (" + fmt(cost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel" }), false, cash < cost));
+          if (hasHalfBuild) {
+            const halfCost = Math.round(cost * 0.5);
+            row.appendChild(makeSmallBtn("호텔 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel", useItem: true }), true, cash < halfCost));
+          }
+        }
+        // 매각도 단계별로 순서대로 내려가지 않고, 별장/호텔/땅 중 원하는 것만 골라 매각합니다
+        // (요청: "원하는 만큼만 매각 가능"). 땅은 건물이 남아있지 않을 때만 매각할 수 있습니다.
+        if (prop.villa) {
+          row.appendChild(makeSmallBtn("별장 매각", () => sendAction("sell-property", { tilePos: pos, part: "villa" }), true));
+        }
+        if (prop.hotel) {
+          row.appendChild(makeSmallBtn("호텔 매각", () => sendAction("sell-property", { tilePos: pos, part: "hotel" }), true));
+        }
+        if (!prop.villa && !prop.hotel) {
+          row.appendChild(makeSmallBtn("땅 매각", () => sendAction("sell-property", { tilePos: pos, part: "land" }), true));
         }
       }
-      row.appendChild(makeSmallBtn("매각", () => sendAction("sell-property", { tilePos: pos }), true));
       list.appendChild(row);
     });
   }
@@ -726,6 +781,8 @@
       if (p.bankrupt) return;
       (posToPlayers[p.position] = posToPlayers[p.position] || []).push(p);
     });
+    const myPlayer = state.players[session.playerId];
+    const myPos = myPlayer && !myPlayer.bankrupt ? myPlayer.position : null;
 
     TILES.forEach((tile) => {
       let box = document.getElementById("sbTile" + tile.pos);
@@ -753,9 +810,25 @@
           '<div class="sb-tokens" id="sbTokens' + tile.pos + '"></div>';
         el.appendChild(box);
       }
-      const here = !!posToPlayers[tile.pos];
+      const playersHere = posToPlayers[tile.pos] || [];
+      const here = playersHere.length > 0;
+      const isMine = myPos === tile.pos;
       box.className = "sb-tile" + (tile.type === "start" ? " start" : tile.type === "event" ? " event" : "") +
-        (here ? " here" : "") + (selectedPos === tile.pos ? " selected" : "");
+        (here ? " here" : "") + (isMine ? " mine-here" : "") + (selectedPos === tile.pos ? " selected" : "");
+      // 다른 참가자가 있는 칸은 모두 같은 금색이 아니라 그 참가자 고유 색(아바타/토큰과 동일한
+      // 색)으로 테두리를 보여줍니다(요청: "각 플레이어 색상별로 칸 표시"). 내가 같은 칸에
+      // 있으면 초록 링(.mine-here, CSS) 바깥에 다른 참가자 색 링을 하나 더 겹쳐 보여줍니다.
+      const others = playersHere.filter((p) => p !== myPlayer);
+      if (others.length > 0) {
+        const otherColor = tokenColor(others[0]);
+        box.style.boxShadow = isMine
+          ? "0 0 0 3px #4CAF50 inset, 0 0 0 6px " + otherColor + " inset"
+          : "0 0 0 2px " + otherColor + " inset";
+        box.style.borderColor = otherColor;
+      } else {
+        box.style.boxShadow = "";
+        box.style.borderColor = "";
+      }
 
       let ownerHtml = "";
       if (tile.type === "city") {
@@ -763,7 +836,8 @@
         if (prop) {
           const ownerP = state.players[prop.ownerId];
           const initial = ownerP ? ownerP.name.slice(0, 2) : "?";
-          const buildMark = prop.building === "hotel" ? "★" : prop.building === "villa" ? "▲" : "";
+          // 별장/호텔은 이제 한 칸에 동시에(각각 최대 1개) 있을 수 있으므로 표시도 둘 다 붙입니다.
+          const buildMark = (prop.villa ? "▲" : "") + (prop.hotel ? "★" : "");
           ownerHtml = initial + buildMark;
         }
       }
@@ -805,7 +879,7 @@
       const priceLine = "구매가 " + fmt(tile.price) + " 원";
       if (prop) {
         const ownerP = state.players[prop.ownerId];
-        const buildLabel = prop.building === "hotel" ? " · 호텔" : prop.building === "villa" ? " · 별장" : "";
+        const buildLabel = (prop.villa ? " · 별장" : "") + (prop.hotel ? " · 호텔" : "");
         const isMine = prop.ownerId === session.playerId;
         const toll = lastTolls[pos];
         const tollPlain = lastTollsPlain[pos];
@@ -880,8 +954,12 @@
     b.addEventListener("click", onClick);
     return b;
   }
-  function makeSmallBtn(label, onClick, secondary) {
+  function makeSmallBtn(label, onClick, secondary, disabled) {
     const b = makeBtn(label, onClick, secondary);
+    if (disabled) {
+      b.disabled = true;
+      b.title = "자금이 부족합니다";
+    }
     return b;
   }
 
@@ -959,11 +1037,8 @@
     status.className = "dice-status";
     status.textContent = "눌러서 주사위를 굴리세요";
     wrap.appendChild(status);
-    // 이번 턴에 내 수입/지출/효과가 얼마나 발생했는지 주사위 결과 바로 아래에 같이 보여줌
-    const detail = document.createElement("div");
-    detail.id = "diceResultDetail";
-    detail.className = "dice-result-detail hidden";
-    wrap.appendChild(detail);
+    // 수입/지출 상세 박스(#diceResultDetail)는 이제 actionPanel 안의 고정 요소라 여기서
+    // 새로 만들지 않습니다(구매/건설/통행료/이벤트 단계로 넘어가도 사라지지 않아야 하므로).
     const btn = makeBtn("🎲 주사위 굴리기", () => rollDiceWithAnimation());
     wrap.appendChild(btn);
     return wrap;
@@ -1011,8 +1086,11 @@
     if (detailEl) detailEl.classList.add("hidden");
     // 굴리기 직전(마지막 폴링 기준) 내 현금/로그 길이를 기준점으로 저장해둬야, 응답으로 온
     // 최신 상태와 비교해서 "이번 굴리기로 무엇이 얼마나 바뀌었는지"를 계산할 수 있습니다.
+    // 이 기준점은 이번 턴이 끝날 때까지(구매/건설/통행료/이벤트 처리 포함) 계속 재사용되어,
+    // 턴 동안 벌어진 모든 수입/지출이 같은 박스에 누적되어 보이게 됩니다.
     const cashBefore = (lastBoardState && lastBoardState.players[session.playerId]) ? lastBoardState.players[session.playerId].cash : 0;
     const logBefore = (lastBoardState && lastBoardState.log) ? lastBoardState.log.length : 0;
+    turnResultBaseline = { cash: cashBefore, logLen: logBefore };
 
     try {
       const data = await api("/api/rooms/" + session.roomCode + "/action", {
