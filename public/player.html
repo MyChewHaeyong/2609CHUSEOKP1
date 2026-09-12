@@ -113,7 +113,12 @@
   .sb-tile .sb-owner{font-size:9px; color:var(--gold); margin-top:1px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .sb-tokens{display:flex; gap:2px; margin-top:1px; flex-wrap:wrap; justify-content:center}
   .sb-token{width:15px; height:15px; border-radius:50%; border:1px solid #1a1733; display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1}
-  .sb-center{position:absolute; left:16%; top:16%; right:16%; bottom:16%; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; border:1px dashed var(--line); border-radius:10px}
+  .sb-center{position:absolute; left:16%; top:16%; right:16%; bottom:16%; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; border:1px dashed var(--line); border-radius:10px; overflow:hidden}
+  /* 보드 가운데 배경 이미지 — 지금은 파일이 없어 항상 숨겨지고 기존 모습 그대로 나옴.
+     public/board/center.png(정사각형 1:1 권장)를 저장소에 올리면 코드 수정 없이 자동으로 적용됨. */
+  .sb-center-img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.5}
+  .sb-center-shade{position:absolute; inset:0; background:linear-gradient(180deg, rgba(22,15,46,.3), rgba(22,15,46,.82))}
+  .sb-center-inner{position:relative; z-index:1}
   .sb-center-inner .cn{font-size:15px; font-weight:700; color:var(--gold)}
   .sb-center-inner .ci{font-size:12.5px; color:#cfcbea; margin-top:4px; line-height:1.5}
   .sb-center-inner .toll-line{font-size:17px; font-weight:700; color:var(--gold)}
@@ -259,7 +264,11 @@
       <div class="panel panel-wide" id="boardPanel">
         <h2>보드 현황 <span style="font-weight:400; color:#9d97c2; font-size:11px">(칸을 눌러보세요)</span></h2>
         <div class="squareboard" id="squareBoard">
-          <div class="sb-center" id="sbCenter"><div class="sb-center-inner" id="sbCenterInner"></div></div>
+          <div class="sb-center" id="sbCenter">
+          <img class="sb-center-img" src="/board/center.png" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='none'" />
+          <div class="sb-center-shade"></div>
+          <div class="sb-center-inner" id="sbCenterInner"></div>
+        </div>
         </div>
         <div class="legend">
           <span><i style="background:#4E7D57"></i>충청권</span>
