@@ -137,7 +137,7 @@
     { pos:0, name:"귀성길 출발", type:"start" },
     { pos:1, name:"대전", type:"city", region:"cc" },
     { pos:2, name:"세종", type:"city", region:"cc" },
-    { pos:3, name:"전통시장", type:"event" },
+    { pos:3, name:"복주머니", type:"event" },
     { pos:4, name:"청주", type:"city", region:"cc" },
     { pos:5, name:"친척집", type:"event" },
     { pos:6, name:"광주", type:"city", region:"jl" },
@@ -325,7 +325,7 @@
             const prop = state.properties[tile.pos];
             if (prop) {
               const ownerP = state.players[prop.ownerId];
-              const buildMark = prop.building === "hotel" ? "★" : prop.building === "villa" ? "▲" : "";
+              const buildMark = (prop.villa ? "▲" : "") + (prop.hotel ? "★" : "");
               ownerHtml = (ownerP ? ownerP.name.slice(0, 3) : "?") + buildMark;
             }
           }
