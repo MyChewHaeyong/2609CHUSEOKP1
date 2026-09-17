@@ -61,10 +61,14 @@
   .legend span{display:inline-flex; align-items:center; gap:5px}
   .legend i{width:9px; height:9px; border-radius:50%; display:inline-block}
 
-  .rankwrap{max-width:520px; margin:0 auto}
+  .rankwrap{max-width:640px; margin:0 auto}
   table{width:100%; border-collapse:collapse; font-size:15px}
   th,td{padding:8px 10px; text-align:left; border-bottom:1px solid var(--line)}
   td.num{text-align:right}
+  .prize-base{color:#9d97c2; font-size:11.5px; text-decoration:line-through}
+  .prize-final{color:var(--gold); font-weight:700}
+  .prize-tag{color:var(--gold); font-size:10.5px; border:1px solid var(--gold); border-radius:5px; padding:1px 5px; margin-left:4px; white-space:nowrap}
+  .prize-bot{color:#9d97c2; font-size:12px}
 
   .phase{text-align:center; margin-top:16px; font-size:13px; color:#cfcbea}
 </style>
@@ -94,7 +98,7 @@
 
     <div id="rankWrap" class="rankwrap" style="display:none">
       <table>
-        <thead><tr><th>순위</th><th>이름</th><th class="num">순자산</th></tr></thead>
+        <thead><tr><th>순위</th><th>이름</th><th class="num">순자산</th><th class="num">송편</th><th>경품</th></tr></thead>
         <tbody id="rankBody"></tbody>
       </table>
     </div>
@@ -290,7 +294,7 @@
         rankWrap.style.display = "block";
         // 최종 순위는 종료 시점에 확정되면 더 바뀌지 않으므로, 내용이 같으면 다시 그리지
         // 않습니다(계속 종료 화면을 띄워둔 채로 매초 아바타가 깜빡이는 걸 방지).
-        const rankKey = (state.finalRanking || []).map((r) => r.playerId + ":" + r.rank + ":" + r.netWorth).join(",");
+        const rankKey = (state.finalRanking || []).map((r) => r.playerId + ":" + r.rank + ":" + r.netWorth + ":" + (r.songpyeon || 0)).join(",");
         if (rankKey !== lastRankingKey) {
           lastRankingKey = rankKey;
           const body = document.getElementById("rankBody");
@@ -298,10 +302,27 @@
           (state.finalRanking || []).forEach((r) => {
             const tr = document.createElement("tr");
             const charId = state.players[r.playerId] ? state.players[r.playerId].characterId : null;
+            // 경품 표시: 등수별 기본 경품을, 보유 송편 토큰이 15개/30개를 넘으면
+            // 1단계/2단계 UP된 경품으로 바꿔서 보여줍니다.
+            let prizeCell;
+            if (r.isBot) {
+              prizeCell = "<span class='prize-bot'>BOT은 경품 대상 아님</span>";
+            } else if (!r.basePrize) {
+              prizeCell = "<span class='prize-bot'>-</span>";
+            } else if (r.songpyeonTier > 0) {
+              prizeCell =
+                "<span class='prize-base'>" + r.basePrize + "</span><br/>" +
+                "<span class='prize-final'>" + r.finalPrize + "</span>" +
+                "<span class='prize-tag'>" + r.tierLabel + "</span>";
+            } else {
+              prizeCell = "<span style='font-weight:700'>" + r.basePrize + "</span>";
+            }
             tr.innerHTML =
               "<td>" + r.rank + "위</td>" +
               "<td><span class='name-avatar'>" + avatarHtml(charId, 26) + "<span>" + r.name + "</span></span></td>" +
-              "<td class='num'>" + fmt(r.netWorth) + "</td>";
+              "<td class='num'>" + fmt(r.netWorth) + "</td>" +
+              "<td class='num'>" + (r.songpyeon || 0) + "</td>" +
+              "<td>" + prizeCell + "</td>";
             body.appendChild(tr);
           });
         }
