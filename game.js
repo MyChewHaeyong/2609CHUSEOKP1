@@ -6,6 +6,39 @@ const START_CASH = 300000;
 const GO_BONUS = 30000;
 const TOLL_DOUBLE_MS = 90 * 60 * 1000; // 90분
 
+// 건설비: 별장은 토지가의 35%, 호텔은 토지가의 50%(사용자 확정 사항 — 이전에는 둘 다 50%였음).
+// 매각환급금은 "건설비의 50%"라는 기존 관계를 그대로 유지해서, 별장은 토지가의 17.5%,
+// 호텔은 토지가의 25%를 돌려받습니다(호텔 쪽 금액은 개편 전과 동일).
+const VILLA_COST_RATE = 0.35;
+const HOTEL_COST_RATE = 0.5;
+const VILLA_SELL_RATE = VILLA_COST_RATE * 0.5; // 0.175
+const HOTEL_SELL_RATE = HOTEL_COST_RATE * 0.5; // 0.25
+function villaCost(tile) {
+  return Math.round(tile.price * VILLA_COST_RATE);
+}
+function hotelCost(tile) {
+  return Math.round(tile.price * HOTEL_COST_RATE);
+}
+
+// 등수별 기본 경품 + 송편 토큰 업그레이드 단계(규칙서 "종료 조건·결산" 절 기준).
+// 송편 토큰 15개 이상이면 1단계 UP, 30개 이상이면 2단계 UP 경품으로 바뀝니다.
+const SONGPYEON_TIER1 = 15;
+const SONGPYEON_TIER2 = 30;
+const PRIZES = [
+  { rank: 1, base: "한우 선물세트 10만원대", tier1: "한우 선물세트 15만원대", tier2: "한우 선물세트 24만원대" },
+  { rank: 2, base: "곶감 선물세트 5만원대", tier1: "곶감 선물세트 6만원대", tier2: "곶감 선물세트 7만원대" },
+  { rank: 3, base: "한과 선물세트 3만원대", tier1: "한과 선물세트 4만원대", tier2: "한과 선물세트 5만원대" },
+  { rank: 4, base: "통조림 선물세트 2만원대", tier1: "통조림 선물세트 3만원대", tier2: "통조림 선물세트 4만원대" },
+];
+function prizeForRank(rank, songpyeon) {
+  const entry = PRIZES.find((p) => p.rank === rank);
+  if (!entry) return { basePrize: null, songpyeonTier: 0, tierLabel: null, finalPrize: null };
+  const tier = songpyeon >= SONGPYEON_TIER2 ? 2 : songpyeon >= SONGPYEON_TIER1 ? 1 : 0;
+  const finalPrize = tier === 2 ? entry.tier2 : tier === 1 ? entry.tier1 : entry.base;
+  const tierLabel = tier === 2 ? "2단계 UP" : tier === 1 ? "1단계 UP" : "기본";
+  return { basePrize: entry.base, songpyeonTier: tier, tierLabel, finalPrize };
+}
+
 const TOLL_MULT = { cc: 1.0, jl: 1.1, gs: 1.15, sd: 1.2, jj: 1.2 };
 
 const TILES = [
@@ -148,12 +181,12 @@ function sellPiece(state, pos, part) {
   if (part === "villa") {
     if (!prop.villa) throw new Error("매각할 별장이 없습니다.");
     prop.villa = false;
-    return Math.round(tile.price * 0.25);
+    return Math.round(tile.price * VILLA_SELL_RATE);
   }
   if (part === "hotel") {
     if (!prop.hotel) throw new Error("매각할 호텔이 없습니다.");
     prop.hotel = false;
-    return Math.round(tile.price * 0.25);
+    return Math.round(tile.price * HOTEL_SELL_RATE);
   }
   if (part === "land") {
     if (prop.villa || prop.hotel) throw new Error("땅을 매각하려면 먼저 별장/호텔을 매각해야 합니다.");
@@ -243,6 +276,7 @@ function computeFinalRanking(state) {
     .map((id) => ({
       playerId: id,
       name: state.players[id].name,
+      isBot: !!state.players[id].isBot,
       cash: state.players[id].cash,
       assetValue: assetValue(state, id),
       netWorth: netWorth(state, id),
@@ -257,6 +291,7 @@ function computeFinalRanking(state) {
     .map((id) => ({
       playerId: id,
       name: state.players[id].name,
+      isBot: !!state.players[id].isBot,
       cash: 0,
       assetValue: 0,
       netWorth: 0,
@@ -264,7 +299,14 @@ function computeFinalRanking(state) {
       bankrupt: true,
     }));
 
-  return [...aliveRanked, ...bankruptRanked].map((r, i) => ({ ...r, rank: i + 1 }));
+  // 등수(rank)가 확정된 뒤에야 경품을 매길 수 있으므로(경품은 "등수" 기준), rank를 먼저
+  // 채우고 나서 prizeForRank를 호출합니다. 경품은 사람 참가자에게만 지급되지만(규칙서
+  // 기준), BOT 항목에도 "만약 사람이었다면"의 참고용 경품 정보를 동일하게 채워 넣고
+  // 화면에서 isBot으로 구분해 표시하도록 둡니다.
+  return [...aliveRanked, ...bankruptRanked].map((r, i) => {
+    const rank = i + 1;
+    return { ...r, rank, ...prizeForRank(rank, r.songpyeon) };
+  });
 }
 
 function bankruptPlayer(state, playerId) {
@@ -366,7 +408,7 @@ function startEvent(state, playerId, tile, now) {
     state.log.push(`${p.name}: 고속도로 정체 (다음 이동 -1)`);
     state.turnPhase = "awaiting-endturn";
   } else if (tile.eventType === "songpyeon") {
-    const n = 1 + Math.floor(Math.random() * 3);
+    const n = 5 + Math.floor(Math.random() * 6); // 5~10개(사용자 확정 사항 — 이전에는 1~3개)
     p.songpyeon += n;
     state.log.push(`${p.name}: 송편 토큰 +${n} (누적 ${p.songpyeon})`);
     state.turnPhase = "awaiting-endturn";
@@ -526,14 +568,16 @@ function maybeBotBuild(state, playerId) {
   const prop = state.properties[pos];
   if (prop && prop.ownerId === playerId) {
     const tile = TILES[pos];
-    const cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
-    if (!prop.villa && p.cash - cost >= 20000) {
-      p.cash -= cost;
+    // 건설비는 후원 효과 적용 범위 밖(통행료만 적용). 별장·호텔은 건설비가 서로 다름.
+    const vCost = villaCost(tile);
+    const hCost = hotelCost(tile);
+    if (!prop.villa && p.cash - vCost >= 20000) {
+      p.cash -= vCost;
       prop.villa = true;
       state.log.push(`${p.name}(BOT): ${tile.name}에 별장 건설`);
     }
-    if (!prop.hotel && p.cash - cost >= 20000) {
-      p.cash -= cost;
+    if (!prop.hotel && p.cash - hCost >= 20000) {
+      p.cash -= hCost;
       prop.hotel = true;
       state.log.push(`${p.name}(BOT): ${tile.name}에 호텔 건설`);
     }
@@ -657,10 +701,10 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       let cost;
       if (payload.level === "villa") {
         if (prop.villa) throw new Error("이미 별장이 있습니다.");
-        cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
+        cost = villaCost(tile); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
       } else if (payload.level === "hotel") {
         if (prop.hotel) throw new Error("이미 호텔이 있습니다.");
-        cost = Math.round(tile.price * 0.5); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
+        cost = hotelCost(tile); // 건설비는 후원 효과 적용 범위 밖(통행료만 적용)
       } else {
         throw new Error("알 수 없는 건물 종류입니다.");
       }
