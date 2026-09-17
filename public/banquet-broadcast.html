@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>만찬경매 - 중계 화면</title>
+<title>차례상 경매 - 중계 화면</title>
 <style>
   :root{ --bg:#1E1B3A; --panel:#262048cc; --gold:#D9A441; --cream:#F4E9D8; --line:#3A3466; --ok:#4E9F63; --red:#E5867A; }
   *{box-sizing:border-box}
@@ -60,7 +60,7 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>만찬경매</h1>
+    <h1>차례상 경매</h1>
     <div class="code" id="codeLine">방 코드 -</div>
     <div class="phase" id="phaseLine"></div>
 
@@ -106,10 +106,10 @@
 
   const TOKEN_COLORS = ["#D9A441", "#4E9F63", "#5B8DEF", "#C9598F"];
   const CHARACTERS = [
-    { id: 1, name: "호랑이", emoji: "🐯", color: "#D9A441" },
-    { id: 2, name: "토끼", emoji: "🐰", color: "#4E9F63" },
-    { id: 3, name: "두루미", emoji: "🕊️", color: "#5B8DEF" },
-    { id: 4, name: "여우", emoji: "🦊", color: "#C9598F" },
+    { id: 1, name: "쥐", emoji: "🐭", color: "#D9A441" },
+    { id: 2, name: "강아지", emoji: "🐶", color: "#4E9F63" },
+    { id: 3, name: "토끼", emoji: "🐰", color: "#5B8DEF" },
+    { id: 4, name: "원숭이", emoji: "🐵", color: "#C9598F" },
   ];
   function characterById(id) {
     return CHARACTERS.find((c) => c.id === Number(id)) || null;
