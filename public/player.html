@@ -256,7 +256,7 @@
       <div class="panel hidden" id="rankPanel">
         <h2>게임 종료 · 최종 순위</h2>
         <table class="ranktable">
-          <thead><tr><th>순위</th><th>이름</th><th>순자산</th><th>송편</th></tr></thead>
+          <thead><tr><th>순위</th><th>이름</th><th>순자산</th><th>송편</th><th>경품</th></tr></thead>
           <tbody id="rankBody"></tbody>
         </table>
       </div>
@@ -777,7 +777,9 @@
       const buildLabel = (prop.villa ? "별장" : "") + (prop.hotel ? (prop.villa ? "+호텔" : "호텔") : "") || "빈 땅";
       row.innerHTML = '<span class="pn">' + tile.name + " (" + buildLabel + ")</span>";
       if (canAct) {
-        const cost = Math.round(tile.price * 0.5);
+        // 별장은 토지가의 35%, 호텔은 토지가의 50%(사용자 확정 사항 — 이전에는 둘 다 50%였음).
+        const villaBuildCost = Math.round(tile.price * 0.35);
+        const hotelBuildCost = Math.round(tile.price * 0.5);
         const me2 = state.players[session.playerId];
         const cash = me2 ? me2.cash : 0;
         // 건설은 지금 내가 그 칸에 있을 때만 할 수 있습니다(요청: "내 차례에 해당 도시의
@@ -786,16 +788,16 @@
         const notHere = me2 && me2.position !== pos;
         const hereReason = "지금 이 칸에 있어야 건설할 수 있습니다";
         if (!prop.villa) {
-          row.appendChild(makeSmallBtn("별장 건설 (" + fmt(cost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa" }), false, notHere ? hereReason : cash < cost));
+          row.appendChild(makeSmallBtn("별장 건설 (" + fmt(villaBuildCost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa" }), false, notHere ? hereReason : cash < villaBuildCost));
           if (hasHalfBuild) {
-            const halfCost = Math.round(cost * 0.5);
+            const halfCost = Math.round(villaBuildCost * 0.5);
             row.appendChild(makeSmallBtn("별장 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa", useItem: true }), true, notHere ? hereReason : cash < halfCost));
           }
         }
         if (!prop.hotel) {
-          row.appendChild(makeSmallBtn("호텔 건설 (" + fmt(cost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel" }), false, notHere ? hereReason : cash < cost));
+          row.appendChild(makeSmallBtn("호텔 건설 (" + fmt(hotelBuildCost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel" }), false, notHere ? hereReason : cash < hotelBuildCost));
           if (hasHalfBuild) {
-            const halfCost = Math.round(cost * 0.5);
+            const halfCost = Math.round(hotelBuildCost * 0.5);
             row.appendChild(makeSmallBtn("호텔 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel", useItem: true }), true, notHere ? hereReason : cash < halfCost));
           }
         }
@@ -981,11 +983,28 @@
     state.finalRanking.forEach((r) => {
       const tr = document.createElement("tr");
       const charId = state.players[r.playerId] ? state.players[r.playerId].characterId : null;
+      // 경품 표시: 등수별 기본 경품을, 보유 송편 토큰이 15개/30개를 넘으면 1단계/2단계
+      // UP된 경품으로 바꿔서 보여줍니다 (요청: "1등 한우선물세트 10만원 → 송편토큰 31개
+      // 보유 → 한우선물세트 2단계UP" 형태).
+      let prizeCell;
+      if (r.isBot) {
+        prizeCell = '<span style="color:#9d97c2; font-size:12px">BOT은 경품 대상 아님</span>';
+      } else if (!r.basePrize) {
+        prizeCell = '<span style="color:#9d97c2; font-size:12px">-</span>';
+      } else if (r.songpyeonTier > 0) {
+        prizeCell =
+          '<span style="color:#9d97c2; font-size:11.5px; text-decoration:line-through">' + r.basePrize + "</span><br/>" +
+          '<span style="color:var(--gold); font-weight:700">' + r.finalPrize + "</span> " +
+          '<span style="color:var(--gold); font-size:11px; border:1px solid var(--gold); border-radius:5px; padding:1px 5px">' + r.tierLabel + "</span>";
+      } else {
+        prizeCell = '<span style="font-weight:700">' + r.basePrize + "</span>";
+      }
       tr.innerHTML =
         "<td>" + r.rank + "위</td>" +
         '<td><span class="name-avatar">' + avatarHtml(charId, 20) + "<span>" + r.name + (r.playerId === session.playerId ? " (나)" : "") + "</span></span></td>" +
         '<td class="num">' + fmt(r.netWorth) + "</td>" +
-        '<td class="num">' + (r.songpyeon || 0) + "</td>";
+        '<td class="num">' + (r.songpyeon || 0) + "</td>" +
+        "<td>" + prizeCell + "</td>";
       body.appendChild(tr);
     });
   }
