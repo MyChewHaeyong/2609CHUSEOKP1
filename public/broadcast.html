@@ -61,7 +61,18 @@
   .legend span{display:inline-flex; align-items:center; gap:5px}
   .legend i{width:9px; height:9px; border-radius:50%; display:inline-block}
 
-  .rankwrap{max-width:640px; margin:0 auto}
+  /* 종료 후 최종 순위: 보드 아래 이어지는 섹션이 아니라 화면 전체를 덮는 별도 팝업으로
+     띄웁니다(요청: "종료 후 순위공개를 별도 팝업으로"). 중계 화면은 시청자가 직접 조작하지
+     않으므로 닫기 버튼 없이, 게임이 끝나는 순간 자동으로 뜬 채로 유지됩니다. */
+  .rank-modal-backdrop{position:fixed; inset:0; background:rgba(10,8,26,.75); backdrop-filter:blur(3px); display:none; align-items:center; justify-content:center; padding:24px; z-index:100; animation:rankFadeIn .3s ease-out}
+  .rank-modal-card{background:var(--panel); border:1px solid var(--gold); border-radius:18px; padding:26px 26px 20px; max-width:680px; width:100%; max-height:88vh; overflow-y:auto; box-shadow:0 20px 70px rgba(0,0,0,.6); animation:rankPopIn .35s cubic-bezier(.2,.8,.2,1)}
+  .rank-modal-card h2{color:var(--gold); font-size:23px; text-align:center; margin:0 0 4px}
+  .rank-modal-sub{text-align:center; font-size:12.5px; color:#cfcbea; margin-bottom:16px}
+  @keyframes rankFadeIn{from{opacity:0} to{opacity:1}}
+  @keyframes rankPopIn{from{opacity:0; transform:scale(.9) translateY(14px)} to{opacity:1; transform:scale(1) translateY(0)}}
+  @media (prefers-reduced-motion: reduce){
+    .rank-modal-backdrop, .rank-modal-card{animation:none}
+  }
   table{width:100%; border-collapse:collapse; font-size:15px}
   th,td{padding:8px 10px; text-align:left; border-bottom:1px solid var(--line)}
   td.num{text-align:right}
@@ -96,11 +107,15 @@
       <span><i style="background:#6C5D8A"></i>이벤트</span>
     </div>
 
-    <div id="rankWrap" class="rankwrap" style="display:none">
-      <table>
-        <thead><tr><th>순위</th><th>이름</th><th class="num">순자산</th><th class="num">송편</th><th>경품</th></tr></thead>
-        <tbody id="rankBody"></tbody>
-      </table>
+    <div id="rankWrap" class="rank-modal-backdrop">
+      <div class="rank-modal-card">
+        <h2>🎉 게임 종료 · 최종 순위</h2>
+        <div class="rank-modal-sub">추석 팔도 유람마블 결과 발표</div>
+        <table>
+          <thead><tr><th>순위</th><th>이름</th><th class="num">순자산</th><th class="num">송편</th><th>경품</th></tr></thead>
+          <tbody id="rankBody"></tbody>
+        </table>
+      </div>
     </div>
     <div class="phase" id="phaseLine"></div>
   </div>
@@ -291,7 +306,7 @@
         cWhat.textContent = "";
         cTimer.textContent = "";
         boardWrap.style.opacity = "0.4";
-        rankWrap.style.display = "block";
+        rankWrap.style.display = "flex";
         // 최종 순위는 종료 시점에 확정되면 더 바뀌지 않으므로, 내용이 같으면 다시 그리지
         // 않습니다(계속 종료 화면을 띄워둔 채로 매초 아바타가 깜빡이는 걸 방지).
         const rankKey = (state.finalRanking || []).map((r) => r.playerId + ":" + r.rank + ":" + r.netWorth + ":" + (r.songpyeon || 0)).join(",");
