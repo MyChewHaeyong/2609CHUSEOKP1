@@ -140,6 +140,22 @@
   .ranktable td.num{text-align:right; font-variant-numeric:tabular-nums}
   .loglist{max-height:140px; overflow-y:auto; font-size:12px; color:#9d97c2; line-height:1.8}
 
+  /* 종료 후 최종 순위: 보드 레이아웃 안 패널이 아니라 화면 전체를 덮는 별도 팝업으로 띄웁니다
+     (요청: "종료 후 순위공개를 별도 팝업으로"). 게임이 끝나는 순간 자동으로 뜨고, 원하면
+     닫았다가 우측 하단의 다시 보기 버튼으로 언제든 다시 열어볼 수 있습니다. */
+  .rank-modal-backdrop{position:fixed; inset:0; background:rgba(10,8,26,.72); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; padding:20px; z-index:100; animation:rankFadeIn .25s ease-out}
+  .rank-modal-backdrop.hidden{display:none}
+  .rank-modal-card{background:var(--panel); border:1px solid var(--gold); border-radius:16px; padding:22px 22px 18px; max-width:600px; width:100%; max-height:88vh; overflow-y:auto; box-shadow:0 18px 60px rgba(0,0,0,.55); animation:rankPopIn .32s cubic-bezier(.2,.8,.2,1)}
+  .rank-modal-card h2{font-size:19px; text-align:center; margin-bottom:4px}
+  .rank-modal-sub{text-align:center; font-size:12px; color:#9d97c2; margin-bottom:14px}
+  .rank-modal-close{width:auto; padding:9px 22px; margin:16px auto 0; display:block}
+  .rank-reopen-btn{position:fixed; right:16px; bottom:16px; width:auto; padding:10px 16px; border-radius:24px; box-shadow:0 6px 18px rgba(0,0,0,.4); z-index:90}
+  @keyframes rankFadeIn{from{opacity:0} to{opacity:1}}
+  @keyframes rankPopIn{from{opacity:0; transform:scale(.92) translateY(10px)} to{opacity:1; transform:scale(1) translateY(0)}}
+  @media (prefers-reduced-motion: reduce){
+    .rank-modal-backdrop, .rank-modal-card{animation:none}
+  }
+
   /* 게임 화면 2단 레이아웃: 왼쪽에 상태/주사위/내 정보를 세로로 쌓고, 오른쪽에 보드판을
      넓게 배치(요청: "지금은 세로로 쌓여서 보기 어려움" → 가로 2단 구조로 변경). 보드판
      같은 이름의 grid-area("board")를 여러 행에 걸쳐 지정해서 왼쪽 칼럼 전체 높이만큼
@@ -154,7 +170,6 @@
       "stats  board"
       "action board"
       "props  board"
-      "rank   board"
       "log    log";
     column-gap:16px;
     align-items:start;
@@ -164,7 +179,6 @@
   #gameBoard #myStats{grid-area:stats}
   #gameBoard #actionPanel{grid-area:action}
   #gameBoard #myPropsPanel{grid-area:props}
-  #gameBoard #rankPanel{grid-area:rank}
   #gameBoard #boardPanel{grid-area:board}
   #gameBoard #logPanel{grid-area:log}
   /* 왼쪽 칼럼 요소들은 그리드 칼럼 폭(최대 420px)에 맞춰 꽉 채우고, 기본 .panel 등에 걸린
@@ -253,14 +267,6 @@
         <div id="myPropsList"></div>
       </div>
 
-      <div class="panel hidden" id="rankPanel">
-        <h2>게임 종료 · 최종 순위</h2>
-        <table class="ranktable">
-          <thead><tr><th>순위</th><th>이름</th><th>순자산</th><th>송편</th><th>경품</th></tr></thead>
-          <tbody id="rankBody"></tbody>
-        </table>
-      </div>
-
       <div class="panel panel-wide" id="boardPanel">
         <h2>보드 현황 <span style="font-weight:400; color:#9d97c2; font-size:11px">(칸을 눌러보세요)</span></h2>
         <div class="squareboard" id="squareBoard">
@@ -285,6 +291,21 @@
         <div class="loglist" id="logList"></div>
       </div>
     </div>
+
+    <!-- 종료 후 최종 순위 팝업(요청: "별도 팝업으로 보여줄 수 있는가") — #gameBoard 그리드
+         밖에 두고 position:fixed로 화면 전체를 덮습니다. -->
+    <div class="rank-modal-backdrop hidden" id="rankModalBackdrop">
+      <div class="rank-modal-card">
+        <h2>🎉 게임 종료 · 최종 순위</h2>
+        <div class="rank-modal-sub">추석 팔도 유람마블 결과가 나왔습니다</div>
+        <table class="ranktable">
+          <thead><tr><th>순위</th><th>이름</th><th>순자산</th><th>송편</th><th>경품</th></tr></thead>
+          <tbody id="rankBody"></tbody>
+        </table>
+        <button id="rankModalCloseBtn" class="secondary rank-modal-close">닫기</button>
+      </div>
+    </div>
+    <button id="rankReopenBtn" class="hidden secondary rank-reopen-btn">🏆 최종 순위 다시 보기</button>
 
     <div class="status-line" id="pollLine"></div>
     <button id="leaveBtn" class="secondary" style="margin-top:14px; border-color:var(--red); color:#ff9a8c">이 방 나가기 / 다른 방 만들기</button>
@@ -970,11 +991,21 @@
   // 띄워두는 동안 매초 다시 그리면 아바타가 깜빡여 보임), 내용이 실제로 같으면 다시
   // 그리지 않습니다.
   let lastRankingKey = null;
+  // 팝업을 직접 닫았는지 여부 — 닫아도 게임은 끝난 상태이므로 다시 열어볼 수 있게
+  // 우측 하단에 "다시 보기" 버튼을 띄워둡니다.
+  let rankModalDismissed = false;
   function renderRanking(state) {
-    const panel = $("rankPanel");
+    const backdrop = $("rankModalBackdrop");
     const show = state.phase === "ended" && Array.isArray(state.finalRanking);
-    panel.classList.toggle("hidden", !show);
-    if (!show) { lastRankingKey = null; return; }
+    if (!show) {
+      backdrop.classList.add("hidden");
+      $("rankReopenBtn").classList.add("hidden");
+      rankModalDismissed = false;
+      lastRankingKey = null;
+      return;
+    }
+    backdrop.classList.toggle("hidden", rankModalDismissed);
+    $("rankReopenBtn").classList.toggle("hidden", !rankModalDismissed);
     const key = state.finalRanking.map((r) => r.playerId + ":" + r.rank + ":" + r.netWorth + ":" + (r.songpyeon || 0)).join(",");
     if (key === lastRankingKey) return;
     lastRankingKey = key;
@@ -1229,6 +1260,24 @@
     $("joinPanel").classList.remove("hidden");
   });
   $("totalPlayersSelect").addEventListener("change", () => renderBotNameInputs(lastHumanCount));
+  // 종료 후 최종 순위 팝업 닫기/다시 보기
+  $("rankModalCloseBtn").addEventListener("click", () => {
+    rankModalDismissed = true;
+    $("rankModalBackdrop").classList.add("hidden");
+    $("rankReopenBtn").classList.remove("hidden");
+  });
+  $("rankReopenBtn").addEventListener("click", () => {
+    rankModalDismissed = false;
+    $("rankModalBackdrop").classList.remove("hidden");
+    $("rankReopenBtn").classList.add("hidden");
+  });
+  // 카드 바깥(어두운 배경) 클릭 시에도 같은 방식으로 닫힘
+  $("rankModalBackdrop").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) $("rankModalCloseBtn").click();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("rankModalBackdrop").classList.contains("hidden")) $("rankModalCloseBtn").click();
+  });
   $("startGameBtn").addEventListener("click", async () => {
     $("startMsg").classList.add("hidden");
     try {
