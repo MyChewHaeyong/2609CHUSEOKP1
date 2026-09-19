@@ -67,13 +67,6 @@ const TILES = [
 
 const MISSIONS = ["애교 대사 한마디 하기", "좋아하는 노래 한 소절 부르기(10초)", "사투리로 인사말 하기"];
 
-function cityTilesOfRegion(region) {
-  return TILES.filter((t) => t.type === "city" && t.region === region);
-}
-function ownsRegion(state, playerId, region) {
-  if (!playerId) return false;
-  return cityTilesOfRegion(region).every((t) => state.properties[t.pos]?.ownerId === playerId);
-}
 function assertCurrentTurn(state, playerId) {
   if (state.phase !== "playing") throw new Error("게임이 진행 중이 아닙니다.");
   if (state.currentPlayerId !== playerId) throw new Error("지금은 당신의 차례가 아닙니다.");
@@ -138,6 +131,9 @@ function initState(players, existingDonationEffects, existingDonationEnabled) {
   return st;
 }
 
+// 요청: "권역 보너스 모두 제거" — 한 권역의 도시를 전부 소유하면 통행료 등급이
+// 0.1→0.2로 올라가던 "올소유 보너스"를 없앴습니다(사용자 확정: 이 보너스만 제거, 권역마다
+// 다른 기본 배율(TOLL_MULT)은 그대로 유지). 이제 통행료 등급은 땅/별장/호텔 여부로만 정해집니다.
 function tollFor(state, pos, now) {
   const tile = TILES[pos];
   const prop = state.properties[pos] || { ownerId: null, villa: false, hotel: false };
@@ -145,7 +141,6 @@ function tollFor(state, pos, now) {
   let tier;
   if (prop.hotel) tier = 0.6;
   else if (prop.villa) tier = 0.3;
-  else if (cityTilesOfRegion(tile.region).length > 1 && ownsRegion(state, prop.ownerId, tile.region)) tier = 0.2;
   else tier = 0.1;
   let amount = Math.round(tile.price * tier * mult);
   if (state.gameStartedAt && now - state.gameStartedAt > TOLL_DOUBLE_MS) amount *= 2;
@@ -168,7 +163,6 @@ function tollForPlain(state, pos, now) {
   let tier;
   if (prop.hotel) tier = 0.6;
   else if (prop.villa) tier = 0.3;
-  else if (cityTilesOfRegion(tile.region).length > 1 && ownsRegion(state, prop.ownerId, tile.region)) tier = 0.2;
   else tier = 0.1;
   let amount = Math.round(tile.price * tier * mult);
   if (state.gameStartedAt && now - state.gameStartedAt > TOLL_DOUBLE_MS) amount *= 2;
@@ -632,11 +626,6 @@ function applyRoll(state, playerId, now) {
   }
 }
 
-function wouldCompleteRegion(state, playerId, tile) {
-  const others = cityTilesOfRegion(tile.region).filter((t) => t.pos !== tile.pos);
-  return others.every((t) => state.properties[t.pos]?.ownerId === playerId);
-}
-
 function maybeBotBuild(state, playerId) {
   const p = state.players[playerId];
   // 별장/호텔은 단계식이 아니라 각자 독립적으로 지을 수 있고, 권역을 전부 소유해야 한다는
@@ -687,7 +676,10 @@ function botTakeTurn(state, now) {
     const tile = TILES[p.position];
     const price = tile.price; // 구매가는 후원 효과 적용 범위 밖(통행료만 적용)
     const afford = p.cash - price;
-    if (price <= p.cash && (afford >= 20000 || wouldCompleteRegion(state, pid, tile))) {
+    // 요청: "권역 보너스 모두 제거" — 권역을 전부 채우면 이득이던 시절에는 BOT이 자금 여력이
+    // 빠듯해도 "이번 구매로 권역이 완성되면" 무리해서 사도록 했지만, 그 보너스가 없어졌으므로
+    // 이제는 순수하게 여윳돈(20,000원 이상 남는지)만 보고 삽니다.
+    if (price <= p.cash && afford >= 20000) {
       state.properties[tile.pos] = { ownerId: pid, villa: false, hotel: false };
       p.cash -= price;
       state.log.push(`${p.name}(BOT): ${tile.name} 구매`);
@@ -877,7 +869,6 @@ module.exports = {
   runBotsIfNeeded,
   tollFor,
   tollForPlain,
-  ownsRegion,
   forceEndGame,
   adminMovePlayer,
   computeFinalRanking,
