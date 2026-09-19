@@ -933,7 +933,7 @@ app.post("/api/rooms/:code/admin/move-player", (req, res) => {
   const { targetPlayerId, tilePos } = req.body || {};
   const state = JSON.parse(room.state_json);
   try {
-    Game.adminMovePlayer(state, targetPlayerId, tilePos);
+    Game.adminMovePlayer(state, targetPlayerId, tilePos, now());
   } catch (e) {
     return res.status(400).json({ ok: false, error: e.message || "이동 처리 중 오류가 발생했습니다." });
   }
