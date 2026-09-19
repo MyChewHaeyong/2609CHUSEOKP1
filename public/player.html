@@ -121,10 +121,16 @@
   /* 요청: "각 칸별 텍스트 표기를 제외하고 보드말이 크게 보이도록" — 칸 이름 글자는 더 이상
      표시하지 않습니다(나중에 배경 이미지에 이름이 미리 그려져 나옴). */
   .sb-tile .sb-name{display:none}
-  .sb-tokens{display:flex; gap:3px; margin-top:2px; flex-wrap:wrap; justify-content:center}
-  /* 요청: "캐릭터말 크기 55px로 적용" — 말은 이제 emoji가 아니라 업로드된 캐릭터 이미지를
-     그대로 씁니다(avatarHtml()이 이미지 있으면 이미지, 없으면 이모지로 자동 대체). */
-  .sb-tokens .avatar{width:55px; height:55px; font-size:30px}
+  /* 요청: "같은 칸에 있는 복수의 캐릭터말이 같이 있는 경우 겹치게 배치" — 여러 명이 한 칸에
+     있을 때 옆으로 늘어놓거나 줄바꿈하지 않고, 카드 쌓듯 서로 겹치게 배치합니다. 나중에 온
+     말이 앞(위)에 겹쳐 보이도록 DOM 순서 그대로 두면(각자 own border로 구분되므로 z-index를
+     따로 안 줘도 뒤 형제가 자연스럽게 앞에 그려짐), 음수 margin으로 겹칩니다. */
+  .sb-tokens{display:flex; margin-top:2px; justify-content:center}
+  /* 요청: "캐릭터말 크기 45PX로 수정"(이전 55px에서 축소) — 말은 이제 emoji가 아니라
+     업로드된 캐릭터 이미지를 그대로 씁니다(avatarHtml()이 이미지 있으면 이미지, 없으면
+     이모지로 자동 대체). */
+  .sb-tokens .avatar{width:45px; height:45px; font-size:24px; flex-shrink:0}
+  .sb-tokens .avatar:not(:first-child){margin-left:-16px}
   /* 요청: "땅과 건물 소유" 표시 — 별장(🏚️)/호텔(🏨) 이모지를 칸 오른쪽 위에 배지로 띄웁니다.
      흐름(flex)에서 빼서 절대 위치로 두면 말(토큰) 공간과 서로 다투지 않습니다. */
   .sb-building{position:absolute; top:27%; right:2px; z-index:2; display:flex; gap:1px; line-height:1}
@@ -1087,11 +1093,11 @@
       if (buildingEl) buildingEl.innerHTML = buildingHtml;
 
       // 요청: "업로드된 캐릭터 이미지가 동일하게 출력될 수 있도록" — 이모지 대신 avatarHtml()로
-      // 캐릭터 이미지(없으면 이모지로 자동 대체)를 그대로 씁니다. 크기는 CSS(.sb-tokens .avatar)에서 55px로 고정.
+      // 캐릭터 이미지(없으면 이모지로 자동 대체)를 그대로 씁니다. 크기는 CSS(.sb-tokens .avatar)에서 45px로 고정.
       const sig = playersHere.map((p) => p.characterId).join(",");
       if (tileTokenSig[tile.pos] !== sig) {
         tileTokenSig[tile.pos] = sig;
-        const tokensHtml = playersHere.length ? playersHere.map((p) => avatarHtml(p.characterId, 55)).join("") : "";
+        const tokensHtml = playersHere.length ? playersHere.map((p) => avatarHtml(p.characterId, 45)).join("") : "";
         const tokensEl = document.getElementById("sbTokens" + tile.pos);
         if (tokensEl) tokensEl.innerHTML = tokensHtml;
       }
