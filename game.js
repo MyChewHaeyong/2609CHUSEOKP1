@@ -109,6 +109,11 @@ function initState(players, existingDonationEffects, existingDonationEnabled) {
     pendingEvent: null,
     pendingToll: null,
     lastRoll: null,
+    // 복불복 윷판/친척집 미션처럼 "이번에 정확히 무슨 일이 있었는지"를 참가자 화면에서
+    // 크게 강조해 보여주기 위한 구조화된 결과(로그 텍스트를 파싱하지 않고 바로 읽게 함).
+    // atLogLen: 이 결과가 기록된 시점의 log.length — 클라이언트가 "새로 생긴 결과인지"를
+    // 문자열 비교 없이 판단하는 키로 씁니다.
+    lastEventResult: null,
     winnerId: null,
     log: ["게임을 시작합니다."],
     players: {},
@@ -383,13 +388,17 @@ function generateMarketCards() {
   }
   return signs.map((s) => s * mag());
 }
+// 결과 이름(도/개/걸/윷/모)까지 함께 돌려줘서 참가자 화면에 "어떤 결과가 나와서 얼마를
+// 받았는지"를 금액만이 아니라 눈으로 보이는 값으로도 표시할 수 있게 합니다(사용자 요청).
+// 확률/금액 자체는 기존 그대로입니다: 도 40%: +5,000 · 개 25%: +10,000 · 걸 20%: -10,000 ·
+// 윷 10%: +25,000 · 모 5%: -25,000.
 function rollYut() {
   const r = Math.random();
-  if (r < 0.4) return 5000;
-  if (r < 0.65) return 10000;
-  if (r < 0.85) return -10000;
-  if (r < 0.95) return 25000;
-  return -25000;
+  if (r < 0.4) return { label: "도", delta: 5000 };
+  if (r < 0.65) return { label: "개", delta: 10000 };
+  if (r < 0.85) return { label: "걸", delta: -10000 };
+  if (r < 0.95) return { label: "윷", delta: 25000 };
+  return { label: "모", delta: -25000 };
 }
 
 function startEvent(state, playerId, tile, now) {
@@ -413,10 +422,11 @@ function startEvent(state, playerId, tile, now) {
     state.log.push(`${p.name}: 송편 토큰 +${n} (누적 ${p.songpyeon})`);
     state.turnPhase = "awaiting-endturn";
   } else if (tile.eventType === "yut") {
-    const delta = rollYut();
+    const { label, delta } = rollYut();
     if (delta >= 0) p.cash += delta;
     else chargePlayer(state, playerId, -delta, now);
-    state.log.push(`${p.name}: 복불복 윷판 ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}`);
+    state.log.push(`${p.name}: 복불복 윷판 결과 "${label}" ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}원`);
+    state.lastEventResult = { type: "yut", label, delta, atLogLen: state.log.length };
     state.turnPhase = "awaiting-endturn";
   }
 }
@@ -435,9 +445,13 @@ function applyEventChoice(state, playerId, choice, now) {
     if (choice === "perform") {
       const bonus = 5000 + Math.floor(Math.random() * 6) * 1000;
       p.cash += bonus;
-      state.log.push(`${p.name}: 친척집 미션 수행 +${bonus.toLocaleString()}`);
+      state.log.push(`${p.name}: 친척집 미션 성공! +${bonus.toLocaleString()}원`);
+      state.lastEventResult = { type: "relative", outcome: "success", amount: bonus, atLogLen: state.log.length };
     } else {
-      state.log.push(`${p.name}: 친척집 미션 패스`);
+      // 패스하면 어떤 경우에도 돈을 받지 못합니다(사용자 확정 사항) — 기존에도 그랬지만,
+      // 참가자 화면에서 "0원"임이 분명히 보이도록 로그·결과 배너 문구를 명확히 함.
+      state.log.push(`${p.name}: 친척집 미션 패스 (획득 금액 없음)`);
+      state.lastEventResult = { type: "relative", outcome: "pass", amount: 0, atLogLen: state.log.length };
     }
   } else if (ev.type === "shop") {
     const item = ["toll-free", "reroll", "half-build"].includes(choice) ? choice : null;
