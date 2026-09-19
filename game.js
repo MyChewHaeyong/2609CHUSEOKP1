@@ -363,10 +363,11 @@ function forceEndGame(state) {
 
 // 관리자가 특정 참가자를 원하는 칸으로 강제로 옮기는 기능(사용자 확정 사항: "특정 칸으로
 // 이동시킬 수 있는 기능"). 방송 진행 중 위치를 바로잡거나 연출을 위해 즉시 옮겨야 할 때 씁니다.
-// 통행료/구매/이벤트 같은 "도착 효과"는 여기서 자동으로 처리하지 않고 위치만 옮깁니다 —
-// 그래야 의도치 않게 돈이 오가거나 게임 진행 단계(turnPhase)가 꼬이지 않습니다. 그 칸에서
-// 실제로 사고 싶거나 이벤트를 겪게 하고 싶으면, 그 참가자의 턴에 평소처럼 진행하면 됩니다.
-function adminMovePlayer(state, playerId, tilePos) {
+// 도시 칸은 위치만 옮기고 통행료/구매는 자동 처리하지 않습니다(의도치 않게 돈이 오가지
+// 않도록). 다만 이벤트 칸(친척집/달토끼 상점/복주머니/고속도로 정체/송편가게/윷판)으로
+// 옮긴 경우는 사용자 확정 사항에 따라 실제로 그 칸에 착지한 것과 똑같이 이벤트가 즉시
+// 발동됩니다.
+function adminMovePlayer(state, playerId, tilePos, now) {
   if (state.phase !== "playing") throw new Error("지금은 게임이 진행 중이 아닙니다.");
   const p = state.players[playerId];
   if (!p) throw new Error("이 게임의 참가자가 아닙니다.");
@@ -381,6 +382,37 @@ function adminMovePlayer(state, playerId, tilePos) {
   state.log.push(
     `(관리자) ${p.name}: ${fromTile ? fromTile.name : p.position}번 칸 → ${toTile.name}(${pos}번) 칸으로 강제 이동`
   );
+
+  if (toTile.type === "event") {
+    // 이벤트를 직접 고를 수 있어야 하는 경우(복주머니/친척집/달토끼 상점)는 이동된 참가자가
+    // 자기 화면에서 바로 선택할 수 있어야 하므로, 이 참가자를 곧바로 "지금 차례"로 넘겨서
+    // 처리합니다. 마침 다른 사람의 턴이 진행 중이었다면 이 강제 이벤트가 그 턴을 대체합니다
+    // — 관리자가 의도적으로 개입하는 상황이므로 정상 동작입니다.
+    if (state.currentPlayerId && state.currentPlayerId !== playerId) {
+      const other = state.players[state.currentPlayerId];
+      state.log.push(`(관리자) 진행 중이던 ${other ? other.name : "?"}의 턴을 대신하고, 강제 이벤트를 처리합니다.`);
+    }
+    const idx = state.turnOrder.indexOf(playerId);
+    if (idx !== -1) state.currentIdx = idx;
+    state.currentPlayerId = playerId;
+    state.pendingToll = null;
+    startEvent(state, playerId, toTile, now || Date.now());
+    if (p.bankrupt) {
+      advanceTurn(state);
+    } else if (p.isBot) {
+      // BOT은 화면에서 직접 버튼을 누를 수 없으니, 평소 봇 턴과 동일하게 즉시 자동으로
+      // 골라 처리하고 다음 사람 턴으로 넘어갑니다.
+      if (state.turnPhase === "awaiting-event") {
+        botResolveEvent(state, playerId, now || Date.now());
+        if (p.bankrupt) {
+          advanceTurn(state);
+          return state;
+        }
+      }
+      maybeBotBuild(state, playerId);
+      advanceTurn(state);
+    }
+  }
   return state;
 }
 
