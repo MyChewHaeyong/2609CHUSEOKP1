@@ -698,7 +698,14 @@
       const bannerElReset = $("eventResultBanner");
       if (bannerElReset) bannerElReset.classList.add("hidden");
       $("yutResultBackdrop").classList.add("hidden");
-    } else if (turnResultBaseline && detailEl && !busy) {
+    } else if (!turnResultBaseline) {
+      // 내가 주사위를 눌러서 이번 턴이 시작된 게 아니라(예: 관리자가 이벤트 칸으로 강제
+      // 이동시켜서 바로 선택 화면이 뜬 경우, 또는 턴 도중 새로고침), 기준점이 아직 없는
+      // 상태입니다. 지금 이 시점을 새 기준점으로 잡아두면 지금부터 벌어지는 변화(예: 지금
+      // 고르는 이벤트 선택 결과)는 정상적으로 아래 박스/배너에 반영됩니다.
+      const meNow = state.players[session.playerId];
+      turnResultBaseline = { cash: meNow ? meNow.cash : 0, logLen: (state.log || []).length };
+    } else if (detailEl && !busy) {
       renderDiceResultDetail(turnResultBaseline.cash, turnResultBaseline.logLen, state);
       renderEventResultBanner(state);
       renderYutResultModal(state);
