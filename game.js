@@ -3,7 +3,10 @@
 const DonationEffect = require("./donationEffect.js");
 
 const START_CASH = 300000;
-const GO_BONUS = 70000; // 출발칸 통과 용돈(사용자 확정 사항, 2026-09-18 조정 — 이전 30,000원)
+// 출발칸 통과 용돈. 2026-09-18에 30,000→70,000원으로 올렸었지만, 밸런스 시뮬레이션 결과
+// 통행료 총수입(평균 약 40,000원/회) 대비 GO 용돈이 지나치게 커서(약 8.6배) 거의 파산이
+// 안 나고 게임이 자연 종료되지 않는 문제가 드러나, 사용자 확정으로 50,000원으로 재조정.
+const GO_BONUS = 50000;
 const TOLL_DOUBLE_MS = 90 * 60 * 1000; // 90분
 
 // 건설비: 별장은 토지가의 35%, 호텔은 토지가의 50%(사용자 확정 사항 — 이전에는 둘 다 50%였음).
@@ -139,8 +142,11 @@ function tollFor(state, pos, now) {
   const prop = state.properties[pos] || { ownerId: null, villa: false, hotel: false };
   const mult = TOLL_MULT[tile.region];
   let tier;
-  if (prop.hotel) tier = 0.6;
-  else if (prop.villa) tier = 0.3;
+  // 밸런스 시뮬레이션 결과, 도시 칸이 초반(10~20라운드) 안에 거의 다 팔린 뒤로는 건설/통행료만으로
+  // 후반부 긴장감을 만들어야 하는데 기존 배율(별장 30%/호텔 60%)로는 GO 용돈의 경제적 우위를 못
+  // 이기는 것으로 나타나, 사용자 확정으로 별장 30%→50%, 호텔 60%→75%로 상향(땅만 소유 10%는 유지).
+  if (prop.hotel) tier = 0.75;
+  else if (prop.villa) tier = 0.5;
   else tier = 0.1;
   let amount = Math.round(tile.price * tier * mult);
   if (state.gameStartedAt && now - state.gameStartedAt > TOLL_DOUBLE_MS) amount *= 2;
@@ -161,8 +167,8 @@ function tollForPlain(state, pos, now) {
   const prop = state.properties[pos] || { ownerId: null, villa: false, hotel: false };
   const mult = TOLL_MULT[tile.region];
   let tier;
-  if (prop.hotel) tier = 0.6;
-  else if (prop.villa) tier = 0.3;
+  if (prop.hotel) tier = 0.75;
+  else if (prop.villa) tier = 0.5;
   else tier = 0.1;
   let amount = Math.round(tile.price * tier * mult);
   if (state.gameStartedAt && now - state.gameStartedAt > TOLL_DOUBLE_MS) amount *= 2;
