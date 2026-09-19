@@ -3,7 +3,7 @@
 const DonationEffect = require("./donationEffect.js");
 
 const START_CASH = 300000;
-const GO_BONUS = 30000;
+const GO_BONUS = 70000; // 출발칸 통과 용돈(사용자 확정 사항, 2026-09-18 조정 — 이전 30,000원)
 const TOLL_DOUBLE_MS = 90 * 60 * 1000; // 90분
 
 // 건설비: 별장은 토지가의 35%, 호텔은 토지가의 50%(사용자 확정 사항 — 이전에는 둘 다 50%였음).
