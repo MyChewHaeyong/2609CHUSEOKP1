@@ -54,20 +54,23 @@
   .sb-tile::before{content:""; display:block; flex:0 0 25%}
   .sb-tile.start{background:color-mix(in srgb, var(--gold) 28%, var(--panel))}
   .sb-tile.event{background:color-mix(in srgb, #6C5D8A 32%, var(--panel))}
-  .sb-tile.here{border-color:var(--gold); border-width:2px}
+  /* 요청: "캐릭터가 있는 칸 색상 테두리 효과 제거" — 말이 서 있다고 칸 테두리를 바꾸지 않습니다. */
   /* 칸별 배경 이미지 — 지금은 파일이 없어 항상 숨겨지고 기존 색상 배경 그대로 나옴.
      나중에 public/tiles/tile0.png ~ tile20.png(칸 번호 = TILES 배열의 pos값)를 저장소에
      올리면 코드 수정 없이 자동으로 적용됨. */
   .sb-tile-img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.6}
   .sb-tile-shade{position:absolute; inset:0; background:linear-gradient(180deg, rgba(22,15,46,.15), rgba(22,15,46,.8))}
-  .sb-tile .sb-region, .sb-tile .sb-name, .sb-tile .sb-owner, .sb-tile .sb-tokens{position:relative; z-index:1}
-  .sb-tile .sb-region{width:6px; height:6px; border-radius:50%; margin-bottom:2px}
+  .sb-tile .sb-name, .sb-tile .sb-tokens{position:relative; z-index:1}
   /* 요청: "각 칸별 텍스트 표기를 제외하고 보드말이 크게 보이도록" — 칸 이름 글자는 더 이상
      표시하지 않습니다(나중에 배경 이미지에 이름이 미리 그려져 나옴). */
   .sb-tile .sb-name{display:none}
-  .sb-tile .sb-owner{font-size:9px; color:var(--gold); margin-top:1px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .sb-tokens{display:flex; gap:3px; margin-top:3px; flex-wrap:wrap; justify-content:center}
-  .sb-token{width:26px; height:26px; border-radius:50%; border:1.5px solid var(--panel); display:flex; align-items:center; justify-content:center; font-size:17px; line-height:1; box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  /* 요청: "캐릭터말 크기 55px로 적용" — 말은 이제 emoji가 아니라 업로드된 캐릭터 이미지를
+     그대로 씁니다(avatarHtml()이 이미지 있으면 이미지, 없으면 이모지로 자동 대체). */
+  .sb-tokens .avatar{width:55px; height:55px; font-size:30px}
+  /* 요청: "땅과 건물 소유" 표시 — 별장(🏚️)/호텔(🏨) 이모지를 칸 오른쪽 위에 배지로 띄웁니다. */
+  .sb-building{position:absolute; top:27%; right:2px; z-index:2; display:flex; gap:1px; line-height:1}
+  .sb-building span{font-size:25px; line-height:1; filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
   .sb-center{position:absolute; left:15%; top:15%; right:15%; bottom:15%; display:flex; align-items:center; justify-content:center; text-align:center; border:1px dashed var(--line); border-radius:14px; overflow:hidden}
   /* 보드 가운데 배경 이미지 — 지금은 파일이 없어 항상 숨겨지고 기존 모습 그대로 나옴.
      public/board/center.png(정사각형 1:1 권장)를 저장소에 올리면 코드 수정 없이 자동으로 적용됨. */
@@ -78,10 +81,6 @@
   .sb-center-inner .what{font-size:13px; color:#cfcbea; margin-top:6px}
   .sb-center-inner .timer{margin-top:14px; font-size:16px; font-family:monospace}
   .sb-center-inner .timer.hot{color:var(--red); font-weight:700}
-
-  .legend{display:flex; flex-wrap:wrap; gap:12px; margin-top:14px; font-size:11.5px; color:#9d97c2; justify-content:center}
-  .legend span{display:inline-flex; align-items:center; gap:5px}
-  .legend i{width:9px; height:9px; border-radius:50%; display:inline-block}
 
   /* 종료 후 최종 순위: 보드 아래 이어지는 섹션이 아니라 화면 전체를 덮는 별도 팝업으로
      띄웁니다(요청: "종료 후 순위공개를 별도 팝업으로"). 중계 화면은 시청자가 직접 조작하지
@@ -134,14 +133,6 @@
         </div>
       </div>
     </div>
-    <div class="legend">
-      <span><i style="background:#4E7D57"></i>충청권</span>
-      <span><i style="background:#B0602F"></i>전라권</span>
-      <span><i style="background:#385E92"></i>경상권</span>
-      <span><i style="background:#95315A"></i>수도권</span>
-      <span><i style="background:#1E7C70"></i>제주</span>
-      <span><i style="background:#6C5D8A"></i>이벤트</span>
-    </div>
 
     <div id="rankWrap" class="rank-modal-backdrop">
       <div class="rank-modal-card">
@@ -162,9 +153,10 @@
   if (params.get("transparent") === "1") document.body.classList.add("transparent");
   document.getElementById("codeLine").textContent = roomCode ? "방 코드 " + roomCode : "URL에 ?room=방코드 를 붙여주세요";
 
-  const REGION_COLOR = { cc:"#4E7D57", jl:"#B0602F", gs:"#385E92", sd:"#95315A", jj:"#1E7C70" };
   const TOKEN_COLORS = ["#D9A441", "#4E9F63", "#5B8DEF", "#C9598F"];
   let lastCenterWhoKey = null; // "누구 차례" 아바타를 실제로 바뀔 때만 다시 그리기 위한 캐시
+  // 칸 위 말(캐릭터 이미지)도 값이 실제로 바뀐 칸만 다시 그리기 위한 서명 캐시(깜빡임 방지).
+  const tileTokenSig = {};
   let lastRankingKey = null; // 최종 순위 표를 내용이 같으면 다시 그리지 않기 위한 캐시
 
   // player.html과 동일한 캐릭터 목록/아바타 표시 로직. 나중에 public/characters/char1~4.png를
@@ -243,17 +235,15 @@
       const [x, y] = TILE_COORDS[tile.pos];
       box.style.left = insetPct(x) + "%";
       box.style.top = insetPct(y) + "%";
-      const color = tile.type === "city" ? REGION_COLOR[tile.region] : null;
-      // 이미지/색상 배경/이름은 칸이 처음 생길 때 한 번만 만듭니다 — 매초 폴링마다 다시 만들면
+      // 이미지/이름은 칸이 처음 생길 때 한 번만 만듭니다 — 매초 폴링마다 다시 만들면
       // <img>가 초마다 새로 생성되어 없는 이미지를 계속 재요청하게 되고, 그게 쌓이면 다른 요청이
-      // 지연될 수 있습니다. owner/tokens만 poll()에서 별도로 갱신합니다.
+      // 지연될 수 있습니다. 소유 테두리/건물/말만 poll()에서 별도로 갱신합니다.
       box.innerHTML =
         '<img class="sb-tile-img" src="/tiles/tile' + tile.pos + '.png" alt="" ' +
         "onerror=\"this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='none'\" />" +
         '<span class="sb-tile-shade"></span>' +
-        (color ? '<span class="sb-region" style="background:' + color + '"></span>' : "") +
         '<span class="sb-name">' + tile.name + "</span>" +
-        '<div class="sb-owner" id="sbOwner' + tile.pos + '"></div>' +
+        '<div class="sb-building" id="sbBuilding' + tile.pos + '"></div>' +
         '<div class="sb-tokens" id="sbTokens' + tile.pos + '"></div>';
       container.appendChild(box);
     });
@@ -493,29 +483,38 @@
         TILES.forEach((tile) => {
           const box = document.getElementById("sbTile" + tile.pos);
           const here = !!posToPlayers[tile.pos];
-          box.className = "sb-tile" + (tile.type === "start" ? " start" : tile.type === "event" ? " event" : "") + (here ? " here" : "");
-          let ownerHtml = "";
+          // 요청: "캐릭터가 있는 칸 색상 테두리 효과 제거" — 말이 서 있다고 클래스/테두리를
+          // 바꾸지 않습니다.
+          box.className = "sb-tile" + (tile.type === "start" ? " start" : tile.type === "event" ? " event" : "");
+
+          // 요청: "토지 소유 개념 표시" — 땅만 소유하면 테두리를 캐릭터 색(6px)으로, 건물까지
+          // 있으면 테두리 + 건물 이모지(별장 🏚️ / 호텔 🏨, 25px)를 함께 표시합니다.
+          let buildingHtml = "";
           if (tile.type === "city") {
             const prop = state.properties[tile.pos];
-            if (prop) {
-              const ownerP = state.players[prop.ownerId];
-              const buildMark = (prop.villa ? "▲" : "") + (prop.hotel ? "★" : "");
-              ownerHtml = (ownerP ? ownerP.name.slice(0, 3) : "?") + buildMark;
+            if (prop && prop.ownerId) {
+              box.style.border = "6px solid " + tokenColor(state.players[prop.ownerId]);
+              if (prop.villa) buildingHtml += "<span>🏚️</span>";
+              if (prop.hotel) buildingHtml += "<span>🏨</span>";
+            } else {
+              box.style.border = "";
             }
+          } else {
+            box.style.border = "";
           }
-          const ownerEl = document.getElementById("sbOwner" + tile.pos);
-          if (ownerEl) ownerEl.textContent = ownerHtml;
+          const buildingEl = document.getElementById("sbBuilding" + tile.pos);
+          if (buildingEl) buildingEl.innerHTML = buildingHtml;
 
-          const tokensHtml = here
-            ? posToPlayers[tile.pos]
-                .map((p) => {
-                  const c = characterById(p.characterId);
-                  return '<span class="sb-token" style="background:' + tokenColor(p) + '">' + (c ? c.emoji : "") + "</span>";
-                })
-                .join("")
-            : "";
-          const tokensEl = document.getElementById("sbTokens" + tile.pos);
-          if (tokensEl) tokensEl.innerHTML = tokensHtml;
+          // 요청: "업로드된 캐릭터 이미지가 동일하게 출력될 수 있도록" — 이모지 대신
+          // avatarHtml()로 캐릭터 이미지(없으면 이모지로 자동 대체)를 그대로 씁니다. 값이
+          // 실제로 바뀐 칸만 다시 그려서(다른 목록들과 같은 이유) <img> 재요청 깜빡임을 막습니다.
+          const sig = here ? posToPlayers[tile.pos].map((p) => p.characterId).join(",") : "";
+          if (tileTokenSig[tile.pos] !== sig) {
+            tileTokenSig[tile.pos] = sig;
+            const tokensHtml = here ? posToPlayers[tile.pos].map((p) => avatarHtml(p.characterId, 55)).join("") : "";
+            const tokensEl = document.getElementById("sbTokens" + tile.pos);
+            if (tokensEl) tokensEl.innerHTML = tokensHtml;
+          }
         });
       }
     } catch (e) {
