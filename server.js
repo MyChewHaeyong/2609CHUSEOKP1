@@ -921,6 +921,36 @@ app.post("/api/rooms/:code/admin/force-end", (req, res) => {
   res.json({ ok: true, stateVersion: newVersion, state });
 });
 
+// 관리자가 특정 참가자를 원하는 칸으로 즉시 이동시키는 기능(사용자 확정 사항).
+app.post("/api/rooms/:code/admin/move-player", (req, res) => {
+  const room = getRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
+  if (!requireAdmin(req, res, room)) return;
+  if (room.game_mode !== "paldomarble") {
+    return res.status(400).json({ ok: false, error: "이 방은 팔도마블 방이 아닙니다." });
+  }
+
+  const { targetPlayerId, tilePos } = req.body || {};
+  const state = JSON.parse(room.state_json);
+  try {
+    Game.adminMovePlayer(state, targetPlayerId, tilePos);
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: e.message || "이동 처리 중 오류가 발생했습니다." });
+  }
+
+  const newVersion = room.state_version + 1;
+  const stateJson = JSON.stringify(state);
+  db.prepare("UPDATE rooms SET state_json = ?, state_version = ?, updated_at = ? WHERE code = ?").run(
+    stateJson,
+    newVersion,
+    now(),
+    room.code
+  );
+  saveSnapshot(room.code, newVersion, stateJson, "관리자 강제 이동");
+
+  res.json({ ok: true, stateVersion: newVersion, state });
+});
+
 app.post("/api/rooms/:code/admin/undo", (req, res) => {
   const room = getRoom(req.params.code);
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
