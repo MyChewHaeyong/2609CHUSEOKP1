@@ -361,6 +361,29 @@ function forceEndGame(state) {
   return state;
 }
 
+// 관리자가 특정 참가자를 원하는 칸으로 강제로 옮기는 기능(사용자 확정 사항: "특정 칸으로
+// 이동시킬 수 있는 기능"). 방송 진행 중 위치를 바로잡거나 연출을 위해 즉시 옮겨야 할 때 씁니다.
+// 통행료/구매/이벤트 같은 "도착 효과"는 여기서 자동으로 처리하지 않고 위치만 옮깁니다 —
+// 그래야 의도치 않게 돈이 오가거나 게임 진행 단계(turnPhase)가 꼬이지 않습니다. 그 칸에서
+// 실제로 사고 싶거나 이벤트를 겪게 하고 싶으면, 그 참가자의 턴에 평소처럼 진행하면 됩니다.
+function adminMovePlayer(state, playerId, tilePos) {
+  if (state.phase !== "playing") throw new Error("지금은 게임이 진행 중이 아닙니다.");
+  const p = state.players[playerId];
+  if (!p) throw new Error("이 게임의 참가자가 아닙니다.");
+  if (p.bankrupt) throw new Error("이미 파산한 참가자는 이동시킬 수 없습니다.");
+  const pos = Number(tilePos);
+  if (!Number.isInteger(pos) || pos < 0 || pos >= TILES.length) {
+    throw new Error("올바르지 않은 칸 번호입니다(0~" + (TILES.length - 1) + ").");
+  }
+  const fromTile = TILES[p.position];
+  const toTile = TILES[pos];
+  p.position = pos;
+  state.log.push(
+    `(관리자) ${p.name}: ${fromTile ? fromTile.name : p.position}번 칸 → ${toTile.name}(${pos}번) 칸으로 강제 이동`
+  );
+  return state;
+}
+
 function advanceTurn(state) {
   if (state.phase === "ended") return;
   const n = state.turnOrder.length;
@@ -508,6 +531,11 @@ function applyRoll(state, playerId, now) {
   const roll = 1 + Math.floor(Math.random() * 6);
   let steps = roll;
   let stayed = false;
+  // 고속도로 정체로 인한 -1칸 페널티가 걸려 있었는지는 아래에서 소비(false로 리셋)해
+  // 버리기 전에 따로 기억해둡니다 — 이번에 도착한 칸이 "정체 때문에 어쩔 수 없이 멈춘
+  // 칸"인지를 이후 도시 구매 처리에서 구분해야 하기 때문입니다(사용자 확정 사항:
+  // "-1칸 이동은 유지, 도착한 칸이 도시면 구매 불가도 유지, 도시가 아니면 이벤트는 정상 진행").
+  const wasPenalized = !!p.nextRollPenalty;
   if (p.nextRollPenalty) {
     p.nextRollPenalty = false;
     if (roll === 1) {
@@ -539,6 +567,12 @@ function applyRoll(state, playerId, now) {
   if (tile.type === "city") {
     const prop = state.properties[tile.pos];
     if (!prop || !prop.ownerId) {
+      if (wasPenalized) {
+        // 고속도로 정체로 밀려서 도착한 빈 땅은 이번 턴엔 구매할 수 없습니다(사용자 확정 사항).
+        state.log.push(`${p.name}: 고속도로 정체로 밀려 도착한 칸이라 이번엔 구매할 수 없습니다.`);
+        state.turnPhase = "awaiting-endturn";
+        return;
+      }
       state.turnPhase = "awaiting-buy";
       return;
     }
@@ -813,6 +847,7 @@ module.exports = {
   tollForPlain,
   ownsRegion,
   forceEndGame,
+  adminMovePlayer,
   computeFinalRanking,
   netWorth,
   assetValue,
