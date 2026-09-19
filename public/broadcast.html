@@ -64,10 +64,14 @@
   /* 요청: "각 칸별 텍스트 표기를 제외하고 보드말이 크게 보이도록" — 칸 이름 글자는 더 이상
      표시하지 않습니다(나중에 배경 이미지에 이름이 미리 그려져 나옴). */
   .sb-tile .sb-name{display:none}
-  .sb-tokens{display:flex; gap:3px; margin-top:3px; flex-wrap:wrap; justify-content:center}
-  /* 요청: "캐릭터말 크기 55px로 적용" — 말은 이제 emoji가 아니라 업로드된 캐릭터 이미지를
-     그대로 씁니다(avatarHtml()이 이미지 있으면 이미지, 없으면 이모지로 자동 대체). */
-  .sb-tokens .avatar{width:55px; height:55px; font-size:30px}
+  /* 요청: "같은 칸에 있는 복수의 캐릭터말이 같이 있는 경우 겹치게 배치" — player.html과 동일하게
+     옆으로 늘어놓거나 줄바꿈하지 않고 서로 겹치게 배치합니다. */
+  .sb-tokens{display:flex; margin-top:3px; justify-content:center}
+  /* 요청: "캐릭터말 크기 45PX로 수정"(이전 55px에서 축소) — 말은 이제 emoji가 아니라
+     업로드된 캐릭터 이미지를 그대로 씁니다(avatarHtml()이 이미지 있으면 이미지, 없으면
+     이모지로 자동 대체). */
+  .sb-tokens .avatar{width:45px; height:45px; font-size:24px; flex-shrink:0}
+  .sb-tokens .avatar:not(:first-child){margin-left:-16px}
   /* 요청: "땅과 건물 소유" 표시 — 별장(🏚️)/호텔(🏨) 이모지를 칸 오른쪽 위에 배지로 띄웁니다. */
   .sb-building{position:absolute; top:27%; right:2px; z-index:2; display:flex; gap:1px; line-height:1}
   .sb-building span{font-size:25px; line-height:1; filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
@@ -511,7 +515,7 @@
           const sig = here ? posToPlayers[tile.pos].map((p) => p.characterId).join(",") : "";
           if (tileTokenSig[tile.pos] !== sig) {
             tileTokenSig[tile.pos] = sig;
-            const tokensHtml = here ? posToPlayers[tile.pos].map((p) => avatarHtml(p.characterId, 55)).join("") : "";
+            const tokensHtml = here ? posToPlayers[tile.pos].map((p) => avatarHtml(p.characterId, 45)).join("") : "";
             const tokensEl = document.getElementById("sbTokens" + tile.pos);
             if (tokensEl) tokensEl.innerHTML = tokensHtml;
           }
