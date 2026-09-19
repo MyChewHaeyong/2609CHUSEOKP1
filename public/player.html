@@ -390,9 +390,10 @@
   // 거치는 동안 계속 이 기준점과 비교해서 "이번 턴 전체"의 누적 수입/지출을 보여줍니다.
   // 내 턴이 아니게 되거나 새로 주사위를 굴리기 전(awaiting-roll) 단계로 돌아오면 null로 리셋.
   let turnResultBaseline = null;
-  // 복불복 윷판/친척집 미션 결과 배너를 이번 턴에 이미 보여줬는지 추적하는 키(state.log의
-  // 길이). turnResultBaseline과 함께 리셋되어, 새 턴이 시작되면 지난 턴의 배너가 남아있지
-  // 않게 합니다.
+  // 친척집 미션 결과 배너를 이미 보여준 적 있는 결과인지 추적하는 키(그 결과가 기록된
+  // 시점의 state.log 길이). 턴이 바뀌어도 리셋하지 않습니다 — 정확히 같은 atLogLen 값은
+  // 정확히 같은 결과 하나뿐이므로, 값 자체가 "이미 봤다"는 표시로 충분합니다. 페이지를
+  // 처음 열었을 때 이미 있던 옛 결과는 renderActionPanel의 최초 1회 시딩에서 걸러집니다.
   let lastEventResultAtLogLen = null;
   let lastTolls = {}; // { [칸 번호]: 현재 통행료 } — 서버가 game.js의 tollFor()로 직접 계산해서 내려줌
   let lastTollsPlain = {}; // { [칸 번호]: 후원 효과를 적용하지 않은 원래 통행료 } — tollForPlain()로 계산
@@ -680,10 +681,21 @@
     el.textContent = text;
   }
 
+  // 페이지를 처음 열었을 때(또는 새로고침) 이미 존재하던 지난 이벤트 결과가 방금 새로
+  // 생긴 것처럼 갑자기 튀어나오지 않도록, 그 시점의 결과는 "이미 봤다"고 딱 한 번만
+  // 미리 기록해둡니다. (아래 lastEventResultAtLogLen/lastYutResultAtLogLen 참고)
+  let eventTrackersSeeded = false;
   function renderActionPanel(state) {
     const panel = $("actionPanel");
     const isMyTurn = state.phase === "playing" && state.currentPlayerId === session.playerId;
     panel.classList.toggle("hidden", !isMyTurn);
+
+    if (!eventTrackersSeeded) {
+      eventTrackersSeeded = true;
+      const evr0 = state.lastEventResult;
+      if (evr0 && evr0.type === "relative") lastEventResultAtLogLen = evr0.atLogLen;
+      else if (evr0 && evr0.type === "yut") lastYutResultAtLogLen = evr0.atLogLen;
+    }
 
     // 이번 턴 누적 수입/지출 박스 갱신: 내 턴이 아니게 되거나 새로 주사위를 굴리기 전
     // 단계(awaiting-roll)로 돌아오면 리셋하고, 그 사이(구매/건설/통행료/이벤트/턴마무리
@@ -692,21 +704,24 @@
     const detailEl = $("diceResultDetail");
     if (!isMyTurn || state.turnPhase === "awaiting-roll") {
       turnResultBaseline = null;
-      lastEventResultAtLogLen = null;
-      lastYutResultAtLogLen = null;
       if (detailEl) detailEl.classList.add("hidden");
       const bannerElReset = $("eventResultBanner");
       if (bannerElReset) bannerElReset.classList.add("hidden");
       $("yutResultBackdrop").classList.add("hidden");
-    } else if (!turnResultBaseline) {
-      // 내가 주사위를 눌러서 이번 턴이 시작된 게 아니라(예: 관리자가 이벤트 칸으로 강제
-      // 이동시켜서 바로 선택 화면이 뜬 경우, 또는 턴 도중 새로고침), 기준점이 아직 없는
-      // 상태입니다. 지금 이 시점을 새 기준점으로 잡아두면 지금부터 벌어지는 변화(예: 지금
-      // 고르는 이벤트 선택 결과)는 정상적으로 아래 박스/배너에 반영됩니다.
-      const meNow = state.players[session.playerId];
-      turnResultBaseline = { cash: meNow ? meNow.cash : 0, logLen: (state.log || []).length };
-    } else if (detailEl && !busy) {
-      renderDiceResultDetail(turnResultBaseline.cash, turnResultBaseline.logLen, state);
+    } else if (!busy) {
+      // 내가 주사위를 눌러서 이번 턴이 시작된 게 아니라(예: 관리자가 칸으로 강제 이동시켜서
+      // 곧바로 이벤트가 발동/선택 화면이 뜬 경우, 또는 턴 도중 새로고침), 기준점이 아직
+      // 없는 상태일 수 있습니다. 그럴 땐 지금 이 시점을 새 기준점으로 잡아둡니다. 다만
+      // 관리자가 즉시 처리형 이벤트(고속도로 정체/송편가게/윷판)로 이미 이동시킨 경우처럼,
+      // 그 결과가 이 기준점보다 먼저(같은 순간에) 로그에 남았을 수도 있으므로, 아래 이벤트
+      // 결과 배너/팝업(윷놀이)은 이 기준점과 무관하게 "이미 보여준 적 있는지"만으로 따로
+      // 판단합니다(renderEventResultBanner/renderYutResultModal 참고) — 그래야 관리자가
+      // 즉시 처리형 이벤트 칸으로 이동시킨 경우에도 결과가 화면에 반드시 나타납니다.
+      if (!turnResultBaseline) {
+        const meNow = state.players[session.playerId];
+        turnResultBaseline = { cash: meNow ? meNow.cash : 0, logLen: (state.log || []).length };
+      }
+      if (detailEl) renderDiceResultDetail(turnResultBaseline.cash, turnResultBaseline.logLen, state);
       renderEventResultBanner(state);
       renderYutResultModal(state);
     }
@@ -1216,19 +1231,19 @@
 
   // 친척집 미션(성공/패스) 결과를 위 누적 박스와 별도로, 이번에 정확히 무슨 일이 있었는지만
   // 크게 강조해서 보여줍니다(요청: "패스하면 아무 돈도 못 받는 것으로", "성공 시 획득 금액
-  // 크게 표시"). state.lastEventResult는 서버 상태 전체에서 하나뿐인 값이라 다른 사람 턴에
-  // 생긴 옛날 결과가 아니라 "이번 턴에 새로 생긴 결과"인지 atLogLen(그 결과가 기록된 시점의
-  // 로그 길이)으로 구분합니다. (복불복 윷판 결과는 더 눈에 띄도록 별도 팝업으로 보여줍니다
-  // — renderYutResultModal 참고.)
+  // 크게 표시"). state.lastEventResult는 서버 상태 전체에서 하나뿐인 값이라, "내가 이미
+  // 보여준 적 있는 결과인지"만 atLogLen(그 결과가 기록된 시점의 로그 길이)으로 구분합니다.
+  // (turnResultBaseline과는 비교하지 않습니다 — 관리자가 즉시 처리형 이벤트 칸으로 강제
+  // 이동시키면 "이동 + 이벤트 처리"가 한 번에 끝나서 기준점을 잡을 새도 없이 이미 결과가
+  // 나 있는 경우가 있는데, 그때도 결과가 반드시 화면에 나타나야 하기 때문입니다.) 이 함수는
+  // isMyTurn일 때만 호출되므로 항상 "내 결과"입니다. (복불복 윷판 결과는 더 눈에 띄도록
+  // 별도 팝업으로 보여줍니다 — renderYutResultModal 참고.)
   function renderEventResultBanner(state) {
     const el = $("eventResultBanner");
     if (!el) return;
     const evr = state.lastEventResult;
-    if (
-      !turnResultBaseline || !evr || evr.type !== "relative" ||
-      evr.atLogLen <= turnResultBaseline.logLen || evr.atLogLen === lastEventResultAtLogLen
-    ) {
-      return; // 이번 턴에 새로 생긴 결과가 아니면 지금 배너 상태를 그대로 유지
+    if (!evr || evr.type !== "relative" || evr.atLogLen === lastEventResultAtLogLen) {
+      return; // 이미 보여준 결과면 지금 배너 상태를 그대로 유지
     }
     lastEventResultAtLogLen = evr.atLogLen;
     if (evr.outcome === "success") {
@@ -1248,10 +1263,7 @@
   let lastYutResultAtLogLen = null;
   function renderYutResultModal(state) {
     const evr = state.lastEventResult;
-    if (
-      !turnResultBaseline || !evr || evr.type !== "yut" ||
-      evr.atLogLen <= turnResultBaseline.logLen || evr.atLogLen === lastYutResultAtLogLen
-    ) {
+    if (!evr || evr.type !== "yut" || evr.atLogLen === lastYutResultAtLogLen) {
       return;
     }
     lastYutResultAtLogLen = evr.atLogLen;
