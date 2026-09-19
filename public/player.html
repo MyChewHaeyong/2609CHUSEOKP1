@@ -12,7 +12,7 @@
      보이지 않도록. 다만 이름/코드 입력, 내 정보, 버튼 같은 폼 성격의 패널은 너무 늘어나면
      오히려 보기 안 좋아서 .panel 기본값은 560px로 가운데 정렬해 두고, 보드판과 진행 기록처럼
      넓을수록 좋은 패널에만 .panel-wide를 붙여 폭 제한을 풀어줍니다. */
-  .wrap{max-width:1180px; margin:0 auto; padding:24px 14px 60px}
+  .wrap{max-width:1420px; margin:0 auto; padding:24px 14px 60px}
   h1{color:var(--gold); font-size:22px; margin:0 0 4px}
   h2{color:var(--gold); font-size:14.5px; margin:0 0 10px; letter-spacing:.02em}
   p.sub{color:#cfcbea; font-size:13px; margin:0 0 22px}
@@ -100,7 +100,7 @@
   .row .name-avatar .avatar{width:20px; height:20px; font-size:11px}
 
   /* 사각형 보드판(부루마블 스타일): 21칸을 정사각형 둘레에 배치하고, 가운데는 선택한 칸 정보 표시 */
-  .squareboard{position:relative; width:100%; aspect-ratio:1/1; max-width:640px; margin:0 auto; background:#160f2e; border:1px solid var(--line); border-radius:14px; overflow:hidden}
+  .squareboard{position:relative; width:100%; aspect-ratio:1/1; max-width:920px; margin:0 auto; background:#160f2e; border:1px solid var(--line); border-radius:14px; overflow:hidden}
   .sb-tile{position:absolute; width:13.2%; height:13.2%; transform:translate(-50%,-50%); border-radius:6px; border:1px solid var(--line); background:#1a1733; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:2px; cursor:pointer; line-height:1.15; transition:background .15s; overflow:hidden}
   .sb-tile.start{background:color-mix(in srgb, var(--gold) 28%, #1a1733)}
   .sb-tile.event{background:color-mix(in srgb, #6C5D8A 30%, #1a1733)}
