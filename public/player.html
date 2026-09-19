@@ -125,7 +125,11 @@
      있을 때 옆으로 늘어놓거나 줄바꿈하지 않고, 카드 쌓듯 서로 겹치게 배치합니다. 나중에 온
      말이 앞(위)에 겹쳐 보이도록 DOM 순서 그대로 두면(각자 own border로 구분되므로 z-index를
      따로 안 줘도 뒤 형제가 자연스럽게 앞에 그려짐), 음수 margin으로 겹칩니다. */
-  .sb-tokens{display:flex; margin-top:2px; justify-content:center}
+  /* 요청: "건물과 캐릭터 말이 최대한 덜 겹치도록 캐릭터말을 칸의 아래쪽으로 배치" — 건물
+     배지(.sb-building)는 칸 위쪽(top:27%)에 떠 있으므로, 말은 반대로 칸 맨 아래로 밀어서
+     겹침을 줄입니다. .sb-tile이 flex-column이라 margin-top:auto를 주면 그 위의 남는 공간을
+     전부 흡수해 말이 칸 하단에 붙습니다(margin-top:2px 고정값 대신). */
+  .sb-tokens{display:flex; margin-top:auto; padding-top:2px; justify-content:center}
   /* 요청: "캐릭터말 크기 45PX로 수정"(이전 55px에서 축소) — 말은 이제 emoji가 아니라
      업로드된 캐릭터 이미지를 그대로 씁니다(avatarHtml()이 이미지 있으면 이미지, 없으면
      이모지로 자동 대체). */
