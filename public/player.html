@@ -69,11 +69,6 @@
   .dice-status.result{color:var(--gold); font-weight:700}
   .dice-result-detail{margin-top:8px; padding:8px 10px; background:#1a1733; border:1px solid var(--line); border-radius:10px; text-align:left; max-width:280px}
   /* 복불복 윷판/친척집 미션처럼 "이번에 정확히 얼마를 받았는지"를 한눈에 크게 보여주는 배너 */
-  .event-result-banner{margin-top:10px; padding:12px 14px; border-radius:10px; text-align:center; font-weight:700; font-size:18px; line-height:1.4}
-  .event-result-banner .erb-amount{font-size:22px}
-  .event-result-banner.win{background:color-mix(in srgb, var(--ok) 20%, #1a1733); color:#9BE8AC; border:1px solid var(--ok)}
-  .event-result-banner.lose{background:color-mix(in srgb, var(--red) 20%, #1a1733); color:#FFB3A3; border:1px solid var(--red)}
-  .event-result-banner.neutral{background:#1a1733; border:1px solid var(--line); color:#9d97c2; font-size:13.5px; font-weight:600}
   .drd-delta{font-size:15px; font-weight:700; color:var(--cream)}
   .drd-delta.drd-plus{color:#7CC98A}
   .drd-delta.drd-minus{color:var(--danger, #E5867A)}
@@ -290,10 +285,6 @@
       <div class="panel hidden" id="actionPanel">
         <h2>내 차례</h2>
         <div id="actionArea"></div>
-        <!-- 복불복 윷판 결과, 친척집 미션 성공/패스 결과처럼 "이번에 정확히 무슨 일이
-             있었는지"를 크게 강조해서 보여주는 배너(요청: "획득 금액 크게 표시"). 아래
-             누적 박스와 달리 이번 턴 전체가 아니라 방금 일어난 그 이벤트 하나만 다룹니다. -->
-        <div id="eventResultBanner" class="hidden"></div>
         <!-- 주사위를 굴린 시점부터 이번 턴이 끝날 때까지(구매/건설/통행료/이벤트 처리 포함)
              누적된 수입·지출을 계속 보여주는 박스. actionArea처럼 단계가 바뀔 때마다
              통째로 지워지면 안 되므로 별도의 고정 요소로 둡니다. -->
@@ -353,15 +344,20 @@
     </div>
     <button id="rankReopenBtn" class="hidden secondary rank-reopen-btn">🏆 최종 순위 다시 보기</button>
 
-    <!-- 복불복 윷판 결과 팝업(요청: "팝업 등 비주얼적으로 윷놀이 결과와 금액을 확인할 수
-         있도록") — 랭킹 팝업과 같은 구조로 화면 전체를 덮습니다. -->
-    <div class="rank-modal-backdrop hidden" id="yutResultBackdrop">
+    <!-- 이벤트 결과 팝업(요청: "팔도마블에서 모든 이벤트 결과는 윷놀이 결과와 동일한 방식으로
+         팝업으로 안내" — 수입/지출이 있는 이벤트(복주머니/친척집/달토끼 상점/복불복 윷판)에
+         적용. 원래 윷놀이 결과 전용이었던 팝업을 4가지 이벤트가 공통으로 쓰도록 일반화한
+         것으로, 제목/아이콘/문구만 이벤트 종류에 따라 바뀝니다 — renderEventResultModal 참고.
+         고속도로 정체(이동 페널티만 있음)·송편가게(현금이 아닌 송편 토큰 지급)는 현금
+         수입/지출이 아니므로 이 팝업 대상에서 제외했습니다(사용자 확인: "수입, 지출에
+         해당하는 이벤트들"). -->
+    <div class="rank-modal-backdrop hidden" id="eventResultBackdrop">
       <div class="rank-modal-card yut-modal-card">
-        <div class="yut-modal-icon" id="yutResultIcon"></div>
-        <h2>복불복 윷놀이 결과</h2>
-        <div class="yut-modal-label" id="yutResultLabel"></div>
-        <div class="yut-modal-amount" id="yutResultAmount"></div>
-        <button id="yutResultCloseBtn" class="secondary rank-modal-close">확인</button>
+        <div class="yut-modal-icon" id="eventResultIcon"></div>
+        <h2 id="eventResultTitle">이벤트 결과</h2>
+        <div class="yut-modal-label" id="eventResultLabel"></div>
+        <div class="yut-modal-amount" id="eventResultAmount"></div>
+        <button id="eventResultCloseBtn" class="secondary rank-modal-close">확인</button>
       </div>
     </div>
 
@@ -419,11 +415,12 @@
   // 거치는 동안 계속 이 기준점과 비교해서 "이번 턴 전체"의 누적 수입/지출을 보여줍니다.
   // 내 턴이 아니게 되거나 새로 주사위를 굴리기 전(awaiting-roll) 단계로 돌아오면 null로 리셋.
   let turnResultBaseline = null;
-  // 친척집 미션 결과 배너를 이미 보여준 적 있는 결과인지 추적하는 키(그 결과가 기록된
-  // 시점의 state.log 길이). 턴이 바뀌어도 리셋하지 않습니다 — 정확히 같은 atLogLen 값은
-  // 정확히 같은 결과 하나뿐이므로, 값 자체가 "이미 봤다"는 표시로 충분합니다. 페이지를
-  // 처음 열었을 때 이미 있던 옛 결과는 renderActionPanel의 최초 1회 시딩에서 걸러집니다.
-  let lastEventResultAtLogLen = null;
+  // 이벤트 결과 팝업(복주머니/친척집/달토끼 상점/복불복 윷판)을 이미 보여준 적 있는
+  // 결과인지 추적하는 키("이벤트타입:그 결과가 기록된 시점의 state.log 길이"). 턴이
+  // 바뀌어도 리셋하지 않습니다 — 정확히 같은 키는 정확히 같은 결과 하나뿐이므로, 값
+  // 자체가 "이미 봤다"는 표시로 충분합니다. 페이지를 처음 열었을 때 이미 있던 옛 결과는
+  // renderActionPanel의 최초 1회 시딩에서 걸러집니다.
+  let lastEventResultKey = null;
   let lastTolls = {}; // { [칸 번호]: 현재 통행료 } — 서버가 game.js의 tollFor()로 직접 계산해서 내려줌
   let lastTollsPlain = {}; // { [칸 번호]: 후원 효과를 적용하지 않은 원래 통행료 } — tollForPlain()로 계산
   // 칸이 정사각형 테두리(0~100%)에 딱 붙으면 칸의 절반이 컨테이너 밖으로 잘려서 안 보이므로,
@@ -810,7 +807,7 @@
 
   // 페이지를 처음 열었을 때(또는 새로고침) 이미 존재하던 지난 이벤트 결과가 방금 새로
   // 생긴 것처럼 갑자기 튀어나오지 않도록, 그 시점의 결과는 "이미 봤다"고 딱 한 번만
-  // 미리 기록해둡니다. (아래 lastEventResultAtLogLen/lastYutResultAtLogLen 참고)
+  // 미리 기록해둡니다. (위 lastEventResultKey 참고)
   let eventTrackersSeeded = false;
   function renderActionPanel(state) {
     const panel = $("actionPanel");
@@ -820,8 +817,9 @@
     if (!eventTrackersSeeded) {
       eventTrackersSeeded = true;
       const evr0 = state.lastEventResult;
-      if (evr0 && evr0.type === "relative") lastEventResultAtLogLen = evr0.atLogLen;
-      else if (evr0 && evr0.type === "yut") lastYutResultAtLogLen = evr0.atLogLen;
+      if (evr0 && ["market", "relative", "shop", "yut"].includes(evr0.type)) {
+        lastEventResultKey = evr0.type + ":" + evr0.atLogLen;
+      }
     }
 
     // 이번 턴 누적 수입/지출 박스 갱신: 내 턴이 아니게 되거나 새로 주사위를 굴리기 전
@@ -832,25 +830,22 @@
     if (!isMyTurn || state.turnPhase === "awaiting-roll") {
       turnResultBaseline = null;
       if (detailEl) detailEl.classList.add("hidden");
-      const bannerElReset = $("eventResultBanner");
-      if (bannerElReset) bannerElReset.classList.add("hidden");
-      $("yutResultBackdrop").classList.add("hidden");
+      $("eventResultBackdrop").classList.add("hidden");
     } else if (!busy) {
       // 내가 주사위를 눌러서 이번 턴이 시작된 게 아니라(예: 관리자가 칸으로 강제 이동시켜서
       // 곧바로 이벤트가 발동/선택 화면이 뜬 경우, 또는 턴 도중 새로고침), 기준점이 아직
       // 없는 상태일 수 있습니다. 그럴 땐 지금 이 시점을 새 기준점으로 잡아둡니다. 다만
       // 관리자가 즉시 처리형 이벤트(고속도로 정체/송편가게/윷판)로 이미 이동시킨 경우처럼,
       // 그 결과가 이 기준점보다 먼저(같은 순간에) 로그에 남았을 수도 있으므로, 아래 이벤트
-      // 결과 배너/팝업(윷놀이)은 이 기준점과 무관하게 "이미 보여준 적 있는지"만으로 따로
-      // 판단합니다(renderEventResultBanner/renderYutResultModal 참고) — 그래야 관리자가
+      // 결과 팝업은 이 기준점과 무관하게 "이미 보여준 적 있는지"만으로 따로
+      // 판단합니다(renderEventResultModal 참고) — 그래야 관리자가
       // 즉시 처리형 이벤트 칸으로 이동시킨 경우에도 결과가 화면에 반드시 나타납니다.
       if (!turnResultBaseline) {
         const meNow = state.players[session.playerId];
         turnResultBaseline = { cash: meNow ? meNow.cash : 0, logLen: (state.log || []).length };
       }
       if (detailEl) renderDiceResultDetail(turnResultBaseline.cash, turnResultBaseline.logLen, state);
-      renderEventResultBanner(state);
-      renderYutResultModal(state);
+      renderEventResultModal(state);
     }
 
     if (!isMyTurn) return;
@@ -1348,51 +1343,70 @@
     el.classList.remove("hidden");
   }
 
-  // 친척집 미션(성공/패스) 결과를 위 누적 박스와 별도로, 이번에 정확히 무슨 일이 있었는지만
-  // 크게 강조해서 보여줍니다(요청: "패스하면 아무 돈도 못 받는 것으로", "성공 시 획득 금액
-  // 크게 표시"). state.lastEventResult는 서버 상태 전체에서 하나뿐인 값이라, "내가 이미
-  // 보여준 적 있는 결과인지"만 atLogLen(그 결과가 기록된 시점의 로그 길이)으로 구분합니다.
-  // (turnResultBaseline과는 비교하지 않습니다 — 관리자가 즉시 처리형 이벤트 칸으로 강제
-  // 이동시키면 "이동 + 이벤트 처리"가 한 번에 끝나서 기준점을 잡을 새도 없이 이미 결과가
-  // 나 있는 경우가 있는데, 그때도 결과가 반드시 화면에 나타나야 하기 때문입니다.) 이 함수는
-  // isMyTurn일 때만 호출되므로 항상 "내 결과"입니다. (복불복 윷판 결과는 더 눈에 띄도록
-  // 별도 팝업으로 보여줍니다 — renderYutResultModal 참고.)
-  function renderEventResultBanner(state) {
-    const el = $("eventResultBanner");
-    if (!el) return;
+  // 이벤트 결과 팝업(요청: "팔도마블에서 모든 이벤트 결과는 윷놀이 결과와 동일한 방식으로
+  // 팝업으로 안내" — 뒤이은 사용자 확인: "수입, 지출에 해당하는 이벤트들"만 대상). 복불복
+  // 윷판 전용이었던 팝업을 4가지 현금 수입/지출 이벤트가 공통으로 쓰도록 일반화했습니다:
+  //   · market(복주머니 카드): 카드 결과 금액 그대로 ±표시
+  //   · relative(친척집 미션): 성공 시 보상 금액, 패스 시 "0원"
+  //   · shop(달토끼 상점): 구매 시 -15,000원, 패스 시 "0원"
+  //   · yut(복불복 윷판): 기존 그대로(도/개/걸/윷/모 라벨 + ±금액)
+  // 고속도로 정체(이동 페널티만 있고 현금 변화 없음)와 송편가게(현금이 아닌 송편 토큰
+  // 지급)는 "수입/지출" 이벤트가 아니므로 이 팝업 대상에서 제외했습니다 — 두 이벤트는
+  // 기존처럼 진행 기록(로그)에만 남습니다.
+  // state.lastEventResult는 서버 상태 전체에서 하나뿐인 값이라, "내가 이미 보여준 적 있는
+  // 결과인지"는 "이벤트타입:atLogLen"(그 결과가 기록된 시점의 로그 길이) 조합 키로
+  // 구분합니다(turnResultBaseline과는 비교하지 않습니다 — 관리자가 즉시 처리형 이벤트 칸으로
+  // 강제 이동시키면 "이동 + 이벤트 처리"가 한 번에 끝나서 기준점을 잡을 새도 없이 이미
+  // 결과가 나 있는 경우가 있는데, 그때도 결과가 반드시 화면에 나타나야 하기 때문입니다).
+  // 이 함수는 isMyTurn일 때만 호출되므로 항상 "내 결과"입니다. 확인을 눌러야 닫히므로
+  // 결과를 놓치지 않고 볼 수 있습니다.
+  function renderEventResultModal(state) {
     const evr = state.lastEventResult;
-    if (!evr || evr.type !== "relative" || evr.atLogLen === lastEventResultAtLogLen) {
-      return; // 이미 보여준 결과면 지금 배너 상태를 그대로 유지
-    }
-    lastEventResultAtLogLen = evr.atLogLen;
-    if (evr.outcome === "success") {
-      el.className = "event-result-banner win";
-      el.innerHTML = '🎉 친척집 미션 성공!<br/><span class="erb-amount">+' + fmt(evr.amount) + "원</span>";
-    } else {
-      el.className = "event-result-banner neutral";
-      el.textContent = "친척집 미션 패스 · 획득 금액 0원";
-    }
-    el.classList.remove("hidden");
-  }
+    if (!evr || !["market", "relative", "shop", "yut"].includes(evr.type)) return;
+    const key = evr.type + ":" + evr.atLogLen;
+    if (key === lastEventResultKey) return; // 이미 보여준 결과
+    lastEventResultKey = key;
 
-  // 복불복 윷판 결과(도/개/걸/윷/모 + 금액)는 주사위처럼 결과가 확 갈리는 "운" 요소라
-  // 방송에서도 눈에 띄도록 화면 전체를 덮는 별도 팝업으로 보여줍니다(요청: "팝업 등
-  // 비주얼적으로 윷놀이 결과와 금액을 확인할 수 있도록"). 확인을 눌러야 닫히므로 결과를
-  // 놓치지 않고 볼 수 있습니다.
-  let lastYutResultAtLogLen = null;
-  function renderYutResultModal(state) {
-    const evr = state.lastEventResult;
-    if (!evr || evr.type !== "yut" || evr.atLogLen === lastYutResultAtLogLen) {
-      return;
+    let title, icon, label, amountText, amountCls;
+    if (evr.type === "yut") {
+      title = "복불복 윷놀이 결과";
+      const win = evr.delta >= 0;
+      icon = win ? "🎉" : "😢";
+      label = evr.label;
+      amountText = (win ? "+" : "-") + fmt(Math.abs(evr.delta)) + "원";
+      amountCls = win ? "win" : "lose";
+    } else if (evr.type === "market") {
+      title = "복주머니 카드 결과";
+      const win = evr.amount >= 0;
+      icon = win ? "🎉" : "😢";
+      label = "";
+      amountText = (win ? "+" : "-") + fmt(Math.abs(evr.amount)) + "원";
+      amountCls = win ? "win" : "lose";
+    } else if (evr.type === "relative") {
+      title = "친척집 미션 결과";
+      if (evr.outcome === "success") {
+        icon = "🎉"; label = "미션 성공!"; amountText = "+" + fmt(evr.amount) + "원"; amountCls = "win";
+      } else {
+        icon = "😌"; label = "미션 패스"; amountText = "0원"; amountCls = "";
+      }
+    } else if (evr.type === "shop") {
+      title = "달토끼 상점 결과";
+      if (evr.outcome === "bought") {
+        icon = "🛍️"; label = (ITEM_LABEL[evr.item] || evr.item) + " 구매"; amountText = "-" + fmt(Math.abs(evr.amount)) + "원"; amountCls = "lose";
+      } else {
+        icon = "🙅"; label = "구매 안 함(패스)"; amountText = "0원"; amountCls = "";
+      }
     }
-    lastYutResultAtLogLen = evr.atLogLen;
-    const win = evr.delta >= 0;
-    $("yutResultIcon").textContent = win ? "🎉" : "😢";
-    $("yutResultLabel").textContent = evr.label;
-    const amountEl = $("yutResultAmount");
-    amountEl.textContent = (win ? "+" : "-") + fmt(Math.abs(evr.delta)) + "원";
-    amountEl.className = "yut-modal-amount " + (win ? "win" : "lose");
-    $("yutResultBackdrop").classList.remove("hidden");
+
+    $("eventResultTitle").textContent = title;
+    $("eventResultIcon").textContent = icon;
+    const labelEl = $("eventResultLabel");
+    labelEl.textContent = label;
+    labelEl.classList.toggle("hidden", !label);
+    const amountEl = $("eventResultAmount");
+    amountEl.textContent = amountText;
+    amountEl.className = "yut-modal-amount" + (amountCls ? " " + amountCls : "");
+    $("eventResultBackdrop").classList.remove("hidden");
   }
 
   async function rollDiceWithAnimation() {
@@ -1504,14 +1518,14 @@
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("rankModalBackdrop").classList.contains("hidden")) $("rankModalCloseBtn").click();
-    if (e.key === "Escape" && !$("yutResultBackdrop").classList.contains("hidden")) $("yutResultCloseBtn").click();
+    if (e.key === "Escape" && !$("eventResultBackdrop").classList.contains("hidden")) $("eventResultCloseBtn").click();
   });
-  // 복불복 윷판 결과 팝업 닫기(확인 버튼 / 바깥 클릭)
-  $("yutResultCloseBtn").addEventListener("click", () => {
-    $("yutResultBackdrop").classList.add("hidden");
+  // 이벤트 결과 팝업 닫기(확인 버튼 / 바깥 클릭)
+  $("eventResultCloseBtn").addEventListener("click", () => {
+    $("eventResultBackdrop").classList.add("hidden");
   });
-  $("yutResultBackdrop").addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) $("yutResultCloseBtn").click();
+  $("eventResultBackdrop").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) $("eventResultCloseBtn").click();
   });
   $("startGameBtn").addEventListener("click", async () => {
     $("startMsg").classList.add("hidden");
