@@ -36,6 +36,9 @@
   .tablecard .head{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px}
   .tablecard .head .name{font-size:16px; font-weight:700}
   .tablecard .head .cash{font-size:12.5px; color:var(--gold)}
+  .tablecard .head .rate{font-size:11px; color:#cfcbea; margin-top:2px}
+  .tablecard .head .rate.rate-pos{color:#4E9F63}
+  .tablecard .head .rate.rate-neg{color:var(--red)}
   .dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:7px; background:#666}
   .dot.on{background:var(--ok)}
 
@@ -160,7 +163,9 @@
   // 이미지 칸처럼 실제로 바뀌는 부분만 갱신합니다.
   const tableCardEls = {};
   let lastResultThumbSlug = null;
-  function renderTables(players, statePlayers, maxItems) {
+  // 요청: "후원이 적용된 4명 모두의 낙찰가 요율 표시" — donationEffect.cumulativeRatePct는
+  // serializeForClient(game2.js)가 참가자별로 항상 내려주는 값이라 그대로 사용합니다.
+  function renderTables(players, statePlayers, maxItems, donationEnabled) {
     const grid = document.getElementById("tableGrid");
     players.forEach((p) => {
       const sp = statePlayers[p.id] || {};
@@ -174,13 +179,15 @@
           '<div class="head"><div class="name-avatar">' + avatarHtml(p.characterId, 30) +
           '<span class="name"><span class="dot" id="tDot_' + p.id + '"></span>' + p.name + (p.isBot ? " · BOT" : "") + "</span></div>" +
           '<div style="text-align:right"><div class="cash" id="tCash_' + p.id + '"></div>' +
-          '<div style="font-size:11.5px; color:#9d97c2" id="tCount_' + p.id + '"></div></div></div>' +
+          '<div style="font-size:11.5px; color:#9d97c2" id="tCount_' + p.id + '"></div>' +
+          '<div class="rate" id="tRate_' + p.id + '"></div></div></div>' +
           '<div class="sang" id="tSang_' + p.id + '"></div>';
         grid.appendChild(card);
         entry = tableCardEls[p.id] = {
           dotEl: document.getElementById("tDot_" + p.id),
           cashEl: document.getElementById("tCash_" + p.id),
           countEl: document.getElementById("tCount_" + p.id),
+          rateEl: document.getElementById("tRate_" + p.id),
           sangEl: document.getElementById("tSang_" + p.id),
           lastItemCount: -1,
         };
@@ -188,6 +195,10 @@
       entry.dotEl.classList.toggle("on", !!(p.connected || p.isBot));
       entry.cashEl.textContent = fmt(sp.cash) + " 원";
       entry.countEl.textContent = "낙찰 " + items.length + " / " + maxItems;
+      const pct = sp.donationEffect ? sp.donationEffect.cumulativeRatePct : 0;
+      const sign = pct > 0 ? "+" : "";
+      entry.rateEl.className = "rate" + (pct > 0 ? " rate-pos" : pct < 0 ? " rate-neg" : "");
+      entry.rateEl.textContent = "낙찰가 요율 " + sign + pct.toFixed(1) + "%" + (donationEnabled === false ? " (효과 꺼짐)" : "");
       if (items.length !== entry.lastItemCount) {
         entry.sangEl.innerHTML = items.length ? items.map(sangCell).join("") : '<div class="empty-hint">아직 낙찰받은 품목 없음</div>';
         entry.lastItemCount = items.length;
@@ -280,7 +291,7 @@
 
       const maxItems = st.maxItemsPerPlayer || 5;
       if (data.status !== "waiting" && st.phase !== "ended") {
-        renderTables(players, st.players || {}, maxItems);
+        renderTables(players, st.players || {}, maxItems, st.donationEnabled);
       }
       if (st.phase === "ended" && st.results) {
         renderResults(st.results, players, st.players || {}, maxItems);
