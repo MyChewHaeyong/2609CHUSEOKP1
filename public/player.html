@@ -68,6 +68,12 @@
   .dice-status{font-size:13px; color:#cfcbea; min-height:18px}
   .dice-status.result{color:var(--gold); font-weight:700}
   .dice-result-detail{margin-top:8px; padding:8px 10px; background:#1a1733; border:1px solid var(--line); border-radius:10px; text-align:left; max-width:280px}
+  /* 복불복 윷판/친척집 미션처럼 "이번에 정확히 얼마를 받았는지"를 한눈에 크게 보여주는 배너 */
+  .event-result-banner{margin-top:10px; padding:12px 14px; border-radius:10px; text-align:center; font-weight:700; font-size:18px; line-height:1.4}
+  .event-result-banner .erb-amount{font-size:22px}
+  .event-result-banner.win{background:color-mix(in srgb, var(--ok) 20%, #1a1733); color:#9BE8AC; border:1px solid var(--ok)}
+  .event-result-banner.lose{background:color-mix(in srgb, var(--red) 20%, #1a1733); color:#FFB3A3; border:1px solid var(--red)}
+  .event-result-banner.neutral{background:#1a1733; border:1px solid var(--line); color:#9d97c2; font-size:13.5px; font-weight:600}
   .drd-delta{font-size:15px; font-weight:700; color:var(--cream)}
   .drd-delta.drd-plus{color:#7CC98A}
   .drd-delta.drd-minus{color:var(--danger, #E5867A)}
@@ -155,6 +161,12 @@
   @media (prefers-reduced-motion: reduce){
     .rank-modal-backdrop, .rank-modal-card{animation:none}
   }
+  .yut-modal-card{max-width:340px; text-align:center}
+  .yut-modal-icon{font-size:44px; line-height:1; margin-bottom:2px}
+  .yut-modal-label{font-size:44px; font-weight:700; color:var(--gold); margin:6px 0 2px}
+  .yut-modal-amount{font-size:26px; font-weight:700; margin-bottom:4px}
+  .yut-modal-amount.win{color:#7CC98A}
+  .yut-modal-amount.lose{color:#FF9A8C}
 
   /* 게임 화면 2단 레이아웃: 왼쪽에 상태/주사위/내 정보를 세로로 쌓고, 오른쪽에 보드판을
      넓게 배치(요청: "지금은 세로로 쌓여서 보기 어려움" → 가로 2단 구조로 변경). 보드판
@@ -255,6 +267,10 @@
       <div class="panel hidden" id="actionPanel">
         <h2>내 차례</h2>
         <div id="actionArea"></div>
+        <!-- 복불복 윷판 결과, 친척집 미션 성공/패스 결과처럼 "이번에 정확히 무슨 일이
+             있었는지"를 크게 강조해서 보여주는 배너(요청: "획득 금액 크게 표시"). 아래
+             누적 박스와 달리 이번 턴 전체가 아니라 방금 일어난 그 이벤트 하나만 다룹니다. -->
+        <div id="eventResultBanner" class="hidden"></div>
         <!-- 주사위를 굴린 시점부터 이번 턴이 끝날 때까지(구매/건설/통행료/이벤트 처리 포함)
              누적된 수입·지출을 계속 보여주는 박스. actionArea처럼 단계가 바뀔 때마다
              통째로 지워지면 안 되므로 별도의 고정 요소로 둡니다. -->
@@ -306,6 +322,18 @@
       </div>
     </div>
     <button id="rankReopenBtn" class="hidden secondary rank-reopen-btn">🏆 최종 순위 다시 보기</button>
+
+    <!-- 복불복 윷판 결과 팝업(요청: "팝업 등 비주얼적으로 윷놀이 결과와 금액을 확인할 수
+         있도록") — 랭킹 팝업과 같은 구조로 화면 전체를 덮습니다. -->
+    <div class="rank-modal-backdrop hidden" id="yutResultBackdrop">
+      <div class="rank-modal-card yut-modal-card">
+        <div class="yut-modal-icon" id="yutResultIcon"></div>
+        <h2>복불복 윷놀이 결과</h2>
+        <div class="yut-modal-label" id="yutResultLabel"></div>
+        <div class="yut-modal-amount" id="yutResultAmount"></div>
+        <button id="yutResultCloseBtn" class="secondary rank-modal-close">확인</button>
+      </div>
+    </div>
 
     <div class="status-line" id="pollLine"></div>
     <button id="leaveBtn" class="secondary" style="margin-top:14px; border-color:var(--red); color:#ff9a8c">이 방 나가기 / 다른 방 만들기</button>
@@ -362,6 +390,10 @@
   // 거치는 동안 계속 이 기준점과 비교해서 "이번 턴 전체"의 누적 수입/지출을 보여줍니다.
   // 내 턴이 아니게 되거나 새로 주사위를 굴리기 전(awaiting-roll) 단계로 돌아오면 null로 리셋.
   let turnResultBaseline = null;
+  // 복불복 윷판/친척집 미션 결과 배너를 이번 턴에 이미 보여줬는지 추적하는 키(state.log의
+  // 길이). turnResultBaseline과 함께 리셋되어, 새 턴이 시작되면 지난 턴의 배너가 남아있지
+  // 않게 합니다.
+  let lastEventResultAtLogLen = null;
   let lastTolls = {}; // { [칸 번호]: 현재 통행료 } — 서버가 game.js의 tollFor()로 직접 계산해서 내려줌
   let lastTollsPlain = {}; // { [칸 번호]: 후원 효과를 적용하지 않은 원래 통행료 } — tollForPlain()로 계산
   // 칸이 정사각형 테두리(0~100%)에 딱 붙으면 칸의 절반이 컨테이너 밖으로 잘려서 안 보이므로,
@@ -660,9 +692,16 @@
     const detailEl = $("diceResultDetail");
     if (!isMyTurn || state.turnPhase === "awaiting-roll") {
       turnResultBaseline = null;
+      lastEventResultAtLogLen = null;
+      lastYutResultAtLogLen = null;
       if (detailEl) detailEl.classList.add("hidden");
+      const bannerElReset = $("eventResultBanner");
+      if (bannerElReset) bannerElReset.classList.add("hidden");
+      $("yutResultBackdrop").classList.add("hidden");
     } else if (turnResultBaseline && detailEl && !busy) {
       renderDiceResultDetail(turnResultBaseline.cash, turnResultBaseline.logLen, state);
+      renderEventResultBanner(state);
+      renderYutResultModal(state);
     }
 
     if (!isMyTurn) return;
@@ -1168,6 +1207,56 @@
     el.classList.remove("hidden");
   }
 
+  // 친척집 미션(성공/패스) 결과를 위 누적 박스와 별도로, 이번에 정확히 무슨 일이 있었는지만
+  // 크게 강조해서 보여줍니다(요청: "패스하면 아무 돈도 못 받는 것으로", "성공 시 획득 금액
+  // 크게 표시"). state.lastEventResult는 서버 상태 전체에서 하나뿐인 값이라 다른 사람 턴에
+  // 생긴 옛날 결과가 아니라 "이번 턴에 새로 생긴 결과"인지 atLogLen(그 결과가 기록된 시점의
+  // 로그 길이)으로 구분합니다. (복불복 윷판 결과는 더 눈에 띄도록 별도 팝업으로 보여줍니다
+  // — renderYutResultModal 참고.)
+  function renderEventResultBanner(state) {
+    const el = $("eventResultBanner");
+    if (!el) return;
+    const evr = state.lastEventResult;
+    if (
+      !turnResultBaseline || !evr || evr.type !== "relative" ||
+      evr.atLogLen <= turnResultBaseline.logLen || evr.atLogLen === lastEventResultAtLogLen
+    ) {
+      return; // 이번 턴에 새로 생긴 결과가 아니면 지금 배너 상태를 그대로 유지
+    }
+    lastEventResultAtLogLen = evr.atLogLen;
+    if (evr.outcome === "success") {
+      el.className = "event-result-banner win";
+      el.innerHTML = '🎉 친척집 미션 성공!<br/><span class="erb-amount">+' + fmt(evr.amount) + "원</span>";
+    } else {
+      el.className = "event-result-banner neutral";
+      el.textContent = "친척집 미션 패스 · 획득 금액 0원";
+    }
+    el.classList.remove("hidden");
+  }
+
+  // 복불복 윷판 결과(도/개/걸/윷/모 + 금액)는 주사위처럼 결과가 확 갈리는 "운" 요소라
+  // 방송에서도 눈에 띄도록 화면 전체를 덮는 별도 팝업으로 보여줍니다(요청: "팝업 등
+  // 비주얼적으로 윷놀이 결과와 금액을 확인할 수 있도록"). 확인을 눌러야 닫히므로 결과를
+  // 놓치지 않고 볼 수 있습니다.
+  let lastYutResultAtLogLen = null;
+  function renderYutResultModal(state) {
+    const evr = state.lastEventResult;
+    if (
+      !turnResultBaseline || !evr || evr.type !== "yut" ||
+      evr.atLogLen <= turnResultBaseline.logLen || evr.atLogLen === lastYutResultAtLogLen
+    ) {
+      return;
+    }
+    lastYutResultAtLogLen = evr.atLogLen;
+    const win = evr.delta >= 0;
+    $("yutResultIcon").textContent = win ? "🎉" : "😢";
+    $("yutResultLabel").textContent = evr.label;
+    const amountEl = $("yutResultAmount");
+    amountEl.textContent = (win ? "+" : "-") + fmt(Math.abs(evr.delta)) + "원";
+    amountEl.className = "yut-modal-amount " + (win ? "win" : "lose");
+    $("yutResultBackdrop").classList.remove("hidden");
+  }
+
   async function rollDiceWithAnimation() {
     if (busy) return;
     busy = true;
@@ -1277,6 +1366,14 @@
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("rankModalBackdrop").classList.contains("hidden")) $("rankModalCloseBtn").click();
+    if (e.key === "Escape" && !$("yutResultBackdrop").classList.contains("hidden")) $("yutResultCloseBtn").click();
+  });
+  // 복불복 윷판 결과 팝업 닫기(확인 버튼 / 바깥 클릭)
+  $("yutResultCloseBtn").addEventListener("click", () => {
+    $("yutResultBackdrop").classList.add("hidden");
+  });
+  $("yutResultBackdrop").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) $("yutResultCloseBtn").click();
   });
   $("startGameBtn").addEventListener("click", async () => {
     $("startMsg").classList.add("hidden");
