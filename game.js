@@ -490,6 +490,10 @@ function applyEventChoice(state, playerId, choice, now) {
     if (delta >= 0) p.cash += delta;
     else chargePlayer(state, playerId, -delta, now);
     state.log.push(`${p.name}: 복주머니 카드 결과 ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}`);
+    // 요청: "모든 이벤트 결과는 윷놀이 결과와 동일한 방식으로 팝업으로 안내" (수입/지출
+    // 이벤트 한정) — 복주머니도 현금 증감이 있는 이벤트이므로 yut/relative와 같은
+    // lastEventResult 패턴을 따릅니다.
+    state.lastEventResult = { type: "market", amount: delta, atLogLen: state.log.length };
   } else if (ev.type === "relative") {
     if (choice === "perform") {
       const bonus = 5000 + Math.floor(Math.random() * 6) * 1000;
@@ -508,8 +512,12 @@ function applyEventChoice(state, playerId, choice, now) {
       p.cash -= 15000;
       p.items.push(item);
       state.log.push(`${p.name}: 달토끼 상점에서 ${itemLabel(item)} 구매`);
+      // 아이템 구매는 15,000원 지출 이벤트이므로 다른 수입/지출 이벤트와 동일하게
+      // lastEventResult를 남겨 참가자 화면에 팝업으로 안내합니다.
+      state.lastEventResult = { type: "shop", outcome: "bought", item, amount: -15000, atLogLen: state.log.length };
     } else {
       state.log.push(`${p.name}: 달토끼 상점 패스`);
+      state.lastEventResult = { type: "shop", outcome: "pass", item: null, amount: 0, atLogLen: state.log.length };
     }
   }
   state.pendingEvent = null;
