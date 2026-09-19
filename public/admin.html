@@ -145,6 +145,18 @@
     <div id="forceEndMsg" class="msg"></div>
   </div>
 
+  <!-- 1부 팔도마블 전용: 특정 칸으로 강제 이동 -->
+  <div class="panel hidden" id="movePanel">
+    <h2>특정 칸으로 이동 <span class="tag">1부 팔도마블</span></h2>
+    <p style="font-size:12.5px;color:#9d97c2;margin:0 0 10px">위치를 바로잡거나 연출을 위해 참가자를 즉시 원하는 칸으로 옮깁니다. 통행료·구매·이벤트는 자동으로 처리되지 않고 위치만 바뀝니다.</p>
+    <label>대상 참가자</label>
+    <select id="movePlayerSelect"></select>
+    <label>이동할 칸</label>
+    <select id="moveTileSelect"></select>
+    <button id="movePlayerBtn">이 칸으로 이동</button>
+    <div id="moveMsg" class="msg"></div>
+  </div>
+
   <div class="panel">
     <h2>복구 도구 <span class="tag">1·2부 공통</span></h2>
     <button id="undoBtn" class="danger">한 단계 되돌리기</button>
@@ -188,6 +200,30 @@
   function characterById(id) {
     return CHARACTERS.find((c) => c.id === Number(id)) || null;
   }
+  // game.js의 TILES와 동일한 칸 목록(이름/타입 표시용) — "특정 칸으로 이동" 드롭다운에 사용.
+  const TILES = [
+    { pos: 0, name: "귀성길 출발", type: "start" },
+    { pos: 1, name: "대전", type: "city" },
+    { pos: 2, name: "세종", type: "city" },
+    { pos: 3, name: "복주머니", type: "event" },
+    { pos: 4, name: "청주", type: "city" },
+    { pos: 5, name: "친척집", type: "event" },
+    { pos: 6, name: "광주", type: "city" },
+    { pos: 7, name: "전주", type: "city" },
+    { pos: 8, name: "고속도로 정체", type: "event" },
+    { pos: 9, name: "목포", type: "city" },
+    { pos: 10, name: "송편가게", type: "event" },
+    { pos: 11, name: "부산", type: "city" },
+    { pos: 12, name: "대구", type: "city" },
+    { pos: 13, name: "달토끼 상점", type: "event" },
+    { pos: 14, name: "울산", type: "city" },
+    { pos: 15, name: "복불복 윷판", type: "event" },
+    { pos: 16, name: "제주", type: "city" },
+    { pos: 17, name: "인천", type: "city" },
+    { pos: 18, name: "친척집", type: "event" },
+    { pos: 19, name: "수원", type: "city" },
+    { pos: 20, name: "서울", type: "city" },
+  ];
   function avatarHtml(charId, sizePx) {
     const c = characterById(charId);
     if (!c) return '<div class="avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px"></div>';
@@ -343,6 +379,7 @@
     const isP2 = currentGameMode === "auction";
     $("startPanel").classList.toggle("hidden", !isP1);
     $("forceEndPanel").classList.toggle("hidden", !isP1);
+    $("movePanel").classList.toggle("hidden", !isP1);
     $("auctionPanel").classList.toggle("hidden", !isP2);
     $("emergencyHint").textContent = isP2
       ? '2부 예시 — 행동 타입 bid + 데이터 {"amount":70000} · 행동 타입 pass + 데이터 {}'
@@ -530,8 +567,7 @@
       el.appendChild(row);
     });
   }
-  function renderPlayerSelect(players) {
-    const sel = $("asPlayer");
+  function fillPlayerSelect(sel, players) {
     const current = sel.value;
     sel.innerHTML = "";
     players.forEach((p) => {
@@ -542,6 +578,25 @@
     });
     if (current) sel.value = current;
   }
+  function renderPlayerSelect(players) {
+    fillPlayerSelect($("asPlayer"), players);
+    fillPlayerSelect($("movePlayerSelect"), players);
+  }
+  let moveTileSelectFilled = false;
+  function fillMoveTileSelectOnce() {
+    if (moveTileSelectFilled) return;
+    moveTileSelectFilled = true;
+    const sel = $("moveTileSelect");
+    sel.innerHTML = "";
+    TILES.forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t.pos;
+      const typeLabel = t.type === "city" ? "도시" : t.type === "start" ? "출발" : "이벤트";
+      opt.textContent = t.pos + ". " + t.name + " (" + typeLabel + ")";
+      sel.appendChild(opt);
+    });
+  }
+  fillMoveTileSelectOnce();
 
   $("loadBtn").addEventListener("click", () => {
     saveCreds();
@@ -591,6 +646,27 @@
     } catch (e) {
       $("forceEndMsg").textContent = "강제 종료 실패: " + e.message;
       $("forceEndMsg").classList.add("err");
+    }
+  });
+
+  $("movePlayerBtn").addEventListener("click", async () => {
+    const { code, key } = creds();
+    const targetPlayerId = $("movePlayerSelect").value;
+    const tilePos = Number($("moveTileSelect").value);
+    if (!targetPlayerId) { $("moveMsg").textContent = "이동시킬 참가자를 선택해주세요."; $("moveMsg").classList.add("err"); return; }
+    try {
+      const data = await api("/api/rooms/" + code + "/admin/move-player", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key, targetPlayerId, tilePos }),
+      });
+      const tile = TILES.find((t) => t.pos === tilePos);
+      $("moveMsg").textContent = "이동 완료: " + (tile ? tile.name + "(" + tilePos + "번)" : tilePos + "번") + " 칸으로 옮겼습니다.";
+      $("moveMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      $("moveMsg").textContent = "이동 실패: " + e.message;
+      $("moveMsg").classList.add("err");
     }
   });
 
