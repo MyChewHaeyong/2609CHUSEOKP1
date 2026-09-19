@@ -113,24 +113,27 @@
   .sb-tile::before{content:""; display:block; flex:0 0 25%}
   .sb-tile.start{background:color-mix(in srgb, var(--gold) 28%, #1a1733)}
   .sb-tile.event{background:color-mix(in srgb, #6C5D8A 30%, #1a1733)}
-  .sb-tile.here{box-shadow:0 0 0 2px var(--gold) inset}
-  /* 내가 지금 위치한 칸은 다른 참가자 위치(금색)와 구분되도록 초록색 테두리로 강조 */
-  .sb-tile.mine-here{box-shadow:0 0 0 3px #4CAF50 inset; border-color:#4CAF50}
-  .sb-tile.selected{border-color:var(--gold)}
+  /* 요청: "캐릭터가 있는 칸 색상 테두리 효과 제거" — 말이 서 있는 칸을 강조하던 테두리는
+     없앴습니다. 칸을 눌러 가운데 정보 패널에서 살펴보는 중이라는 표시만 테두리 대신
+     box-shadow로 남겨둡니다(소유 표시용 6px 테두리와 서로 속성이 달라 겹치지 않음). */
+  .sb-tile.selected{box-shadow:0 0 0 2px var(--gold) inset}
   /* 칸별 배경 이미지 — 지금은 이미지가 없어서 항상 안 보이고 기존 색상 배경 그대로 나옴.
      나중에 public/tiles/tile0.png ~ tile20.png(칸 번호 = TILES 배열의 pos값)를 저장소에
      올리면, 코드 수정 없이 그 칸에 자동으로 사진이 배경으로 깔리고 글씨는 그 위에 그대로 보임. */
   .sb-tile-img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.6}
   .sb-tile-shade{position:absolute; inset:0; background:linear-gradient(180deg, rgba(22,15,46,.15), rgba(22,15,46,.8))}
-  .sb-tile .sb-region, .sb-tile .sb-name, .sb-tile .sb-owner, .sb-tile .sb-tokens{position:relative; z-index:1}
-  .sb-tile .sb-region{width:6px; height:6px; border-radius:50%; margin-bottom:2px}
+  .sb-tile .sb-name, .sb-tile .sb-tokens{position:relative; z-index:1}
   /* 요청: "각 칸별 텍스트 표기를 제외하고 보드말이 크게 보이도록" — 칸 이름 글자는 더 이상
-     표시하지 않습니다(나중에 배경 이미지에 이름이 미리 그려져 나옴). 소유자 표시는 누가
-     그 땅을 가졌는지 알아야 하므로 유지합니다. */
+     표시하지 않습니다(나중에 배경 이미지에 이름이 미리 그려져 나옴). */
   .sb-tile .sb-name{display:none}
-  .sb-tile .sb-owner{font-size:9px; color:var(--gold); margin-top:1px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .sb-tokens{display:flex; gap:3px; margin-top:2px; flex-wrap:wrap; justify-content:center}
-  .sb-token{width:26px; height:26px; border-radius:50%; border:1.5px solid #1a1733; display:flex; align-items:center; justify-content:center; font-size:17px; line-height:1; box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  /* 요청: "캐릭터말 크기 55px로 적용" — 말은 이제 emoji가 아니라 업로드된 캐릭터 이미지를
+     그대로 씁니다(avatarHtml()이 이미지 있으면 이미지, 없으면 이모지로 자동 대체). */
+  .sb-tokens .avatar{width:55px; height:55px; font-size:30px}
+  /* 요청: "땅과 건물 소유" 표시 — 별장(🏚️)/호텔(🏨) 이모지를 칸 오른쪽 위에 배지로 띄웁니다.
+     흐름(flex)에서 빼서 절대 위치로 두면 말(토큰) 공간과 서로 다투지 않습니다. */
+  .sb-building{position:absolute; top:27%; right:2px; z-index:2; display:flex; gap:1px; line-height:1}
+  .sb-building span{font-size:25px; line-height:1; filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
   .sb-center{position:absolute; left:16%; top:16%; right:16%; bottom:16%; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; border:1px dashed var(--line); border-radius:10px; overflow:hidden}
   /* 보드 가운데 배경 이미지 — 지금은 파일이 없어 항상 숨겨지고 기존 모습 그대로 나옴.
      public/board/center.png(정사각형 1:1 권장)를 저장소에 올리면 코드 수정 없이 자동으로 적용됨. */
@@ -143,9 +146,6 @@
   .sb-center-inner .toll-donation-line{font-size:11.5px; margin-top:3px; color:#cfcbea}
   .sb-center-inner .toll-donation-line.toll-plus{color:#7CC98A}
   .sb-center-inner .toll-donation-line.toll-minus{color:#E5867A}
-  .legend{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; font-size:11.5px; color:#9d97c2; justify-content:center}
-  .legend span{display:inline-flex; align-items:center; gap:4px}
-  .legend i{width:8px; height:8px; border-radius:50%; display:inline-block}
 
   .proprow{display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px}
   .proprow:last-child{border-bottom:none}
@@ -315,14 +315,6 @@
           <div class="sb-center-inner" id="sbCenterInner"></div>
         </div>
         </div>
-        <div class="legend">
-          <span><i style="background:#4E7D57"></i>충청권</span>
-          <span><i style="background:#B0602F"></i>전라권</span>
-          <span><i style="background:#385E92"></i>경상권</span>
-          <span><i style="background:#95315A"></i>수도권</span>
-          <span><i style="background:#1E7C70"></i>제주</span>
-          <span><i style="background:#6C5D8A"></i>이벤트</span>
-        </div>
       </div>
 
       <!-- 요청: "4명의 현재 순위 / 후원이 적용된 4명 모두의 통행요율(보드판 오른쪽 프레임
@@ -386,7 +378,6 @@
   let busy = false; // 액션 처리 중 중복 클릭 방지
   let lastHumanCount = 1;
 
-  const REGION_COLOR = { cc:"#4E7D57", jl:"#B0602F", gs:"#385E92", sd:"#95315A", jj:"#1E7C70" };
   const TOKEN_COLORS = ["#D9A441", "#4E9F63", "#5B8DEF", "#C9598F"];
 
   // 캐릭터 4종 — 지금은 이모지로 표시. 나중에 이미지를 저장소의 public/characters/ 폴더에
@@ -1035,6 +1026,11 @@
     });
   }
 
+  // 칸 위 말(캐릭터 이미지)은 이제 avatarHtml()로 <img>를 그리므로, 값이 실제로 바뀌지
+  // 않았는데 매초 통째로 다시 그리면 <img>가 계속 새로 생겨 깜빡이는 것처럼 보입니다
+  // (다른 목록들과 같은 이유). 칸마다 "지금 누가 서 있는지" 서명을 기억해뒀다가 바뀐
+  // 칸만 다시 그립니다.
+  const tileTokenSig = {};
   function renderBoard(state) {
     lastBoardState = state; // 칸을 다시 누르지 않아도 폴링 때마다 선택된 칸 정보가 최신으로 갱신되도록 보관
     const el = $("squareBoard");
@@ -1044,8 +1040,6 @@
       if (p.bankrupt) return;
       (posToPlayers[p.position] = posToPlayers[p.position] || []).push(p);
     });
-    const myPlayer = state.players[session.playerId];
-    const myPos = myPlayer && !myPlayer.bankrupt ? myPlayer.position : null;
 
     TILES.forEach((tile) => {
       let box = document.getElementById("sbTile" + tile.pos);
@@ -1057,66 +1051,55 @@
         box.style.left = insetPct(x) + "%";
         box.style.top = insetPct(y) + "%";
         box.addEventListener("click", () => { selectedPos = tile.pos; renderCenterInfo(lastBoardState); });
-        const color = tile.type === "city" ? REGION_COLOR[tile.region] : null;
-        // 칸 배경 이미지(있으면)/색상 배경/이름은 이 칸이 "처음 생길 때" 딱 한 번만 만듭니다.
+        // 칸 배경 이미지(있으면)/이름은 이 칸이 "처음 생길 때" 딱 한 번만 만듭니다.
         // (전에는 폴링 때마다(매초) 아래 내용을 통째로 다시 만들어서, 이미지가 아직 없는 칸에서
         // <img>가 초마다 새로 생성 → 브라우저가 같은 404 이미지를 초마다 다시 요청 → 이게 쌓이면
         // 실제 액션 요청(턴 종료 등)이 뒤에서 대기하며 화면이 멈춘 것처럼 보일 수 있었습니다.)
-        // 이후 폴링에서는 owner/tokens 칸만 별도로 찾아서 갱신합니다.
+        // 이후 폴링에서는 소유 테두리/건물/말 칸만 별도로 찾아서 갱신합니다.
         box.innerHTML =
           '<img class="sb-tile-img" src="/tiles/tile' + tile.pos + '.png" alt="" ' +
           "onerror=\"this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='none'\" />" +
           '<span class="sb-tile-shade"></span>' +
-          (color ? '<span class="sb-region" style="background:' + color + '"></span>' : "") +
           '<span class="sb-name">' + tile.name + "</span>" +
-          '<div class="sb-owner" id="sbOwner' + tile.pos + '"></div>' +
+          '<div class="sb-building" id="sbBuilding' + tile.pos + '"></div>' +
           '<div class="sb-tokens" id="sbTokens' + tile.pos + '"></div>';
         el.appendChild(box);
       }
       const playersHere = posToPlayers[tile.pos] || [];
-      const here = playersHere.length > 0;
-      const isMine = myPos === tile.pos;
+      // 요청: "캐릭터가 있는 칸 색상 테두리 효과 제거" — 말이 서 있다고 해서 테두리를 바꾸지
+      // 않습니다(아래에서 클릭 선택 표시만 별도로 유지).
       box.className = "sb-tile" + (tile.type === "start" ? " start" : tile.type === "event" ? " event" : "") +
-        (here ? " here" : "") + (isMine ? " mine-here" : "") + (selectedPos === tile.pos ? " selected" : "");
-      // 다른 참가자가 있는 칸은 모두 같은 금색이 아니라 그 참가자 고유 색(아바타/토큰과 동일한
-      // 색)으로 테두리를 보여줍니다(요청: "각 플레이어 색상별로 칸 표시"). 내가 같은 칸에
-      // 있으면 초록 링(.mine-here, CSS) 바깥에 다른 참가자 색 링을 하나 더 겹쳐 보여줍니다.
-      const others = playersHere.filter((p) => p !== myPlayer);
-      if (others.length > 0) {
-        const otherColor = tokenColor(others[0]);
-        box.style.boxShadow = isMine
-          ? "0 0 0 3px #4CAF50 inset, 0 0 0 6px " + otherColor + " inset"
-          : "0 0 0 2px " + otherColor + " inset";
-        box.style.borderColor = otherColor;
-      } else {
-        box.style.boxShadow = "";
-        box.style.borderColor = "";
-      }
+        (selectedPos === tile.pos ? " selected" : "");
 
-      let ownerHtml = "";
+      // 요청: "토지 소유 개념 표시 — 땅만 소유: 테두리를 캐릭터 색으로, 땅+건물 소유: 테두리 +
+      // 건물 이모지(별장 🏚️ / 호텔 🏨)". 테두리는 6px, 건물 이모지는 25px.
+      let buildingHtml = "";
       if (tile.type === "city") {
         const prop = state.properties[tile.pos];
-        if (prop) {
-          const ownerP = state.players[prop.ownerId];
-          const initial = ownerP ? ownerP.name.slice(0, 2) : "?";
-          // 별장/호텔은 이제 한 칸에 동시에(각각 최대 1개) 있을 수 있으므로 표시도 둘 다 붙입니다.
-          const buildMark = (prop.villa ? "▲" : "") + (prop.hotel ? "★" : "");
-          ownerHtml = initial + buildMark;
+        if (prop && prop.ownerId) {
+          const ownerColor = tokenColor(state.players[prop.ownerId]);
+          box.style.border = "6px solid " + ownerColor;
+          // 별장/호텔은 한 칸에 동시에(각각 최대 1개) 있을 수 있으므로 둘 다 표시합니다.
+          if (prop.villa) buildingHtml += "<span>🏚️</span>";
+          if (prop.hotel) buildingHtml += "<span>🏨</span>";
+        } else {
+          box.style.border = "";
         }
+      } else {
+        box.style.border = "";
       }
-      const ownerEl = document.getElementById("sbOwner" + tile.pos);
-      if (ownerEl) ownerEl.textContent = ownerHtml;
+      const buildingEl = document.getElementById("sbBuilding" + tile.pos);
+      if (buildingEl) buildingEl.innerHTML = buildingHtml;
 
-      const tokensHtml = here
-        ? posToPlayers[tile.pos]
-            .map((p) => {
-              const c = characterById(p.characterId);
-              return '<span class="sb-token" style="background:' + tokenColor(p) + '">' + (c ? c.emoji : "") + "</span>";
-            })
-            .join("")
-        : "";
-      const tokensEl = document.getElementById("sbTokens" + tile.pos);
-      if (tokensEl) tokensEl.innerHTML = tokensHtml;
+      // 요청: "업로드된 캐릭터 이미지가 동일하게 출력될 수 있도록" — 이모지 대신 avatarHtml()로
+      // 캐릭터 이미지(없으면 이모지로 자동 대체)를 그대로 씁니다. 크기는 CSS(.sb-tokens .avatar)에서 55px로 고정.
+      const sig = playersHere.map((p) => p.characterId).join(",");
+      if (tileTokenSig[tile.pos] !== sig) {
+        tileTokenSig[tile.pos] = sig;
+        const tokensHtml = playersHere.length ? playersHere.map((p) => avatarHtml(p.characterId, 55)).join("") : "";
+        const tokensEl = document.getElementById("sbTokens" + tile.pos);
+        if (tokensEl) tokensEl.innerHTML = tokensHtml;
+      }
     });
 
     renderCenterInfo(state);
