@@ -12,7 +12,7 @@
      보이지 않도록. 다만 이름/코드 입력, 내 정보, 버튼 같은 폼 성격의 패널은 너무 늘어나면
      오히려 보기 안 좋아서 .panel 기본값은 560px로 가운데 정렬해 두고, 보드판과 진행 기록처럼
      넓을수록 좋은 패널에만 .panel-wide를 붙여 폭 제한을 풀어줍니다. */
-  .wrap{max-width:1420px; margin:0 auto; padding:24px 14px 60px}
+  .wrap{max-width:1600px; margin:0 auto; padding:24px 14px 60px}
   h1{color:var(--gold); font-size:22px; margin:0 0 4px}
   h2{color:var(--gold); font-size:14.5px; margin:0 0 10px; letter-spacing:.02em}
   p.sub{color:#cfcbea; font-size:13px; margin:0 0 22px}
@@ -100,8 +100,17 @@
   .row .name-avatar .avatar{width:20px; height:20px; font-size:11px}
 
   /* 사각형 보드판(부루마블 스타일): 21칸을 정사각형 둘레에 배치하고, 가운데는 선택한 칸 정보 표시 */
-  .squareboard{position:relative; width:100%; aspect-ratio:1/1; max-width:920px; margin:0 auto; background:#160f2e; border:1px solid var(--line); border-radius:14px; overflow:hidden}
-  .sb-tile{position:absolute; width:13.2%; height:13.2%; transform:translate(-50%,-50%); border-radius:6px; border:1px solid var(--line); background:#1a1733; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:2px; cursor:pointer; line-height:1.15; transition:background .15s; overflow:hidden}
+  .squareboard{position:relative; width:100%; aspect-ratio:1/1; max-width:850px; margin:0 auto; background:#160f2e; border:1px solid var(--line); border-radius:14px; overflow:hidden}
+  /* 요청: "각 칸의 상단 25%는 이미지에 칸 명칭이 표기되므로 가리지 않도록" — 나중에
+     tile0~20.png에 칸 이름이 미리 그려진 이미지를 올릴 예정이라, 지금 동적으로 그리는
+     내용(지역색 점/소유자/말)은 전부 칸의 아래쪽 75% 안에서만 표시되도록 위쪽에 25%만큼
+     패딩을 줍니다(요소 자체 크기는 그대로, box-sizing:border-box라 안쪽으로 밀려 들어감). */
+  /* 주의: .sb-tile은 absolute 배치라 padding의 %값은 칸 자신이 아니라 보드(컨테이너) 폭을
+     기준으로 계산되어버려서(브라우저 표준 동작), padding-top:25% 같은 방식으로는 "칸 높이의
+     25%"를 만들 수 없습니다. 대신 ::before 가짜 요소를 flex 자식으로 넣어 칸 자신의 높이
+     기준 25%를 정확히 확보합니다. */
+  .sb-tile{position:absolute; width:13.2%; height:13.2%; transform:translate(-50%,-50%); border-radius:6px; border:1px solid var(--line); background:#1a1733; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; text-align:center; padding:2px; cursor:pointer; line-height:1.15; transition:background .15s; overflow:hidden}
+  .sb-tile::before{content:""; display:block; flex:0 0 25%}
   .sb-tile.start{background:color-mix(in srgb, var(--gold) 28%, #1a1733)}
   .sb-tile.event{background:color-mix(in srgb, #6C5D8A 30%, #1a1733)}
   .sb-tile.here{box-shadow:0 0 0 2px var(--gold) inset}
@@ -115,10 +124,13 @@
   .sb-tile-shade{position:absolute; inset:0; background:linear-gradient(180deg, rgba(22,15,46,.15), rgba(22,15,46,.8))}
   .sb-tile .sb-region, .sb-tile .sb-name, .sb-tile .sb-owner, .sb-tile .sb-tokens{position:relative; z-index:1}
   .sb-tile .sb-region{width:6px; height:6px; border-radius:50%; margin-bottom:2px}
-  .sb-tile .sb-name{font-weight:700; color:var(--cream); font-size:10.5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  /* 요청: "각 칸별 텍스트 표기를 제외하고 보드말이 크게 보이도록" — 칸 이름 글자는 더 이상
+     표시하지 않습니다(나중에 배경 이미지에 이름이 미리 그려져 나옴). 소유자 표시는 누가
+     그 땅을 가졌는지 알아야 하므로 유지합니다. */
+  .sb-tile .sb-name{display:none}
   .sb-tile .sb-owner{font-size:9px; color:var(--gold); margin-top:1px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .sb-tokens{display:flex; gap:3px; margin-top:2px; flex-wrap:wrap; justify-content:center}
-  .sb-token{width:21px; height:21px; border-radius:50%; border:1.5px solid #1a1733; display:flex; align-items:center; justify-content:center; font-size:14px; line-height:1; box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  .sb-token{width:26px; height:26px; border-radius:50%; border:1.5px solid #1a1733; display:flex; align-items:center; justify-content:center; font-size:17px; line-height:1; box-shadow:0 1px 3px rgba(0,0,0,.4)}
   .sb-center{position:absolute; left:16%; top:16%; right:16%; bottom:16%; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; border:1px dashed var(--line); border-radius:10px; overflow:hidden}
   /* 보드 가운데 배경 이미지 — 지금은 파일이 없어 항상 숨겨지고 기존 모습 그대로 나옴.
      public/board/center.png(정사각형 1:1 권장)를 저장소에 올리면 코드 수정 없이 자동으로 적용됨. */
@@ -175,14 +187,14 @@
      화면이 좁아지면(모바일 등) 아래 미디어 쿼리에서 원래처럼 세로 1단으로 되돌아갑니다. */
   #gameBoard{
     display:grid;
-    grid-template-columns:minmax(300px,420px) 1fr;
+    grid-template-columns:minmax(300px,420px) 1fr minmax(190px,230px);
     grid-template-areas:
-      "timer  board"
-      "turn   board"
-      "stats  board"
-      "action board"
-      "props  board"
-      "log    log";
+      "timer  board side"
+      "turn   board side"
+      "stats  board side"
+      "action board side"
+      "props  board side"
+      "log    log   log";
     column-gap:16px;
     align-items:start;
   }
@@ -192,7 +204,18 @@
   #gameBoard #actionPanel{grid-area:action}
   #gameBoard #myPropsPanel{grid-area:props}
   #gameBoard #boardPanel{grid-area:board}
+  #gameBoard #sidePanel{grid-area:side}
   #gameBoard #logPanel{grid-area:log}
+  /* 보드 오른쪽 프레임(요청: "보드판 오른쪽 프레임 추가하여 적용") — 실시간 순위 /
+     후원 통행요율 패널을 세로로 쌓습니다. */
+  #sidePanel{display:flex; flex-direction:column}
+  #sidePanel .panel{margin-bottom:12px}
+  #sidePanel .panel:last-child{margin-bottom:0}
+  .side-row{display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px}
+  .side-row:last-child{border-bottom:none}
+  .side-row .name-avatar .avatar{width:18px; height:18px; font-size:10px}
+  .side-rate.rate-pos{color:#7CC98A}
+  .side-rate.rate-neg{color:var(--danger, #E5867A)}
   /* 왼쪽 칼럼 요소들은 그리드 칼럼 폭(최대 420px)에 맞춰 꽉 채우고, 기본 .panel 등에 걸린
      560px 가운데 정렬 제약은 여기서는 해제합니다(그리드가 이미 폭을 잡아주므로). */
   #gameBoard .panel, #gameBoard .turn-banner, #gameBoard .timerbar, #gameBoard .mystats{
@@ -299,6 +322,21 @@
           <span><i style="background:#95315A"></i>수도권</span>
           <span><i style="background:#1E7C70"></i>제주</span>
           <span><i style="background:#6C5D8A"></i>이벤트</span>
+        </div>
+      </div>
+
+      <!-- 요청: "4명의 현재 순위 / 후원이 적용된 4명 모두의 통행요율(보드판 오른쪽 프레임
+           추가하여 적용)" — 보드 오른쪽에 실시간 순위와 통행요율을 항상 볼 수 있는 패널을
+           둡니다. 둘 다 서버에서 이미 내려주는 값(자산/후원 효과)만으로 클라이언트에서
+           계산해 보여줍니다. -->
+      <div id="sidePanel">
+        <div class="panel">
+          <h2>실시간 순위</h2>
+          <div id="liveRankList"></div>
+        </div>
+        <div class="panel">
+          <h2>후원 통행요율</h2>
+          <div id="liveRateList"></div>
         </div>
       </div>
 
@@ -579,6 +617,104 @@
     renderBoard(state);
     renderLog(state);
     renderRanking(state);
+    renderLiveRankPanel(state);
+    renderLiveRatePanel(state);
+  }
+
+  // 자산 평가액(현금+토지+건물) 계산 — game.js의 assetValue()와 완전히 동일한 규칙을
+  // 클라이언트에서 그대로 재현합니다(서버가 이미 다 내려주는 값이라 별도 API 없이 계산
+  // 가능). 후원 효과는 자산 평가에는 적용되지 않습니다(통행료에만 적용, 확정 사항).
+  function liveAssetValue(state, playerId) {
+    let total = 0;
+    Object.keys(state.properties || {}).forEach((posStr) => {
+      const prop = state.properties[posStr];
+      if (!prop || prop.ownerId !== playerId) return;
+      const tile = TILES[Number(posStr)];
+      if (!tile) return;
+      total += tile.price;
+      if (prop.villa) total += Math.round(tile.price * 0.5);
+      if (prop.hotel) total += Math.round(tile.price * 0.5) * 2;
+    });
+    return total;
+  }
+
+  // 요청: "4명의 현재 순위" — 게임 종료 전에도 실시간으로 순자산(현금+자산평가액) 내림차순
+  // 순위를 보여줍니다. computeFinalRanking(game.js)과 같은 규칙: 생존자는 순자산 내림차순,
+  // 파산자는 나중에 파산할수록 더 높은 순위로 뒤에 이어붙입니다.
+  function computeLiveRanking(state) {
+    const bankruptOrder = state.bankruptOrder || [];
+    const alive = (state.turnOrder || []).filter((id) => state.players[id] && !state.players[id].bankrupt);
+    const bankrupt = (state.turnOrder || []).filter((id) => state.players[id] && state.players[id].bankrupt);
+    const aliveRanked = alive
+      .map((id) => ({ playerId: id, netWorth: (state.players[id].cash || 0) + liveAssetValue(state, id) }))
+      .sort((a, b) => b.netWorth - a.netWorth);
+    const bankruptRanked = bankrupt
+      .slice()
+      .sort((a, b) => bankruptOrder.indexOf(b) - bankruptOrder.indexOf(a))
+      .map((id) => ({ playerId: id, netWorth: 0 }));
+    return aliveRanked.concat(bankruptRanked).map((r, i) => Object.assign({ rank: i + 1 }, r));
+  }
+
+  // 다른 목록들(renderPlayers 등)과 같은 이유로, 내용이 실제로 바뀌었을 때만 다시 그립니다.
+  // 매초 폴링마다 통째로 다시 그리면 안의 아바타 <img>도 매번 새로 생성되어, 순위가 그대로인
+  // 동안에도 이미지가 계속 재요청되며 화면이 깜빡이는 것처럼 보입니다.
+  let lastLiveRankKey = null;
+  function renderLiveRankPanel(state) {
+    const el = $("liveRankList");
+    if (!el) return;
+    const ranking = computeLiveRanking(state);
+    const key = ranking.map((r) => r.playerId + ":" + r.rank + ":" + r.netWorth).join(",");
+    if (key === lastLiveRankKey) return;
+    lastLiveRankKey = key;
+    el.innerHTML = ranking
+      .map((r) => {
+        const p = state.players[r.playerId];
+        if (!p) return "";
+        const isMe = r.playerId === session.playerId;
+        return (
+          '<div class="side-row"><span>' + r.rank + "위 " +
+          '<span class="name-avatar">' + avatarHtml(p.characterId, 18) +
+          '<span class="' + (isMe ? "me" : "") + '">' + p.name + (isMe ? " (나)" : "") + "</span></span></span>" +
+          "<span>" + fmt(r.netWorth) + "원</span></div>"
+        );
+      })
+      .join("");
+  }
+
+  // 요청: "후원이 적용된 4명 모두의 통행요율" — donationRate(game.js)와 완전히 동일한 규칙
+  // (방 전체 스위치가 꺼져있거나 BOT이면 0%)으로 참가자 전원의 통행료 보정률을 보여줍니다.
+  // 순위 패널과 마찬가지로 값이 실제로 바뀔 때만 다시 그려 아바타 깜빡임을 막습니다.
+  let lastLiveRateKey = null;
+  function renderLiveRatePanel(state) {
+    const el = $("liveRateList");
+    if (!el) return;
+    const ids = state.turnOrder || [];
+    const rows = ids.map((id) => {
+      const p = state.players[id];
+      if (!p) return null;
+      let rate = 0;
+      if (state.donationEnabled !== false && !p.isBot) {
+        const de = state.donationEffects && state.donationEffects[id];
+        rate = de ? de.cumulativeRate : 0;
+      }
+      return { id, p, pct: Math.round(rate * 1000) / 10 };
+    });
+    const key = rows.map((r) => (r ? r.id + ":" + r.pct : "-")).join(",");
+    if (key === lastLiveRateKey) return;
+    lastLiveRateKey = key;
+    el.innerHTML = rows
+      .map((r) => {
+        if (!r) return "";
+        const isMe = r.id === session.playerId;
+        const sign = r.pct > 0 ? "+" : "";
+        const cls = "side-rate" + (r.pct > 0 ? " rate-pos" : r.pct < 0 ? " rate-neg" : "");
+        return (
+          '<div class="side-row"><span class="name-avatar">' + avatarHtml(r.p.characterId, 18) +
+          '<span class="' + (isMe ? "me" : "") + '">' + r.p.name + (isMe ? " (나)" : "") + "</span></span>" +
+          '<span class="' + cls + '">' + sign + r.pct.toFixed(1) + "%</span></div>"
+        );
+      })
+      .join("");
   }
 
   // 이 목록의 내용(연결 상태 포함)이 실제로 바뀌었을 때만 다시 그립니다. 매초 폴링마다
