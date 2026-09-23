@@ -103,6 +103,30 @@ function clampVolume(v, fallback) {
 }
 
 // ---------------------------------------------------------------------------
+// 참가자 화면(player.html)에 "무슨 일이 있었는지" 팝업으로 보여주기 위한 결과 기록입니다.
+// ★ 예전에는 state.lastEventResult/state.lastTollResult처럼 "가장 최근 결과 하나"만
+// 담는 필드였는데, 실제로 있었던 문제: BOT이 여러 명이면 사람이 한 번 폴링(약 1초)하는
+// 사이에 BOT 턴이 연달아(최대 60턴까지) 서버 한 번의 요청 처리 안에서 곧바로 다 진행돼
+// 버립니다(runBotsIfNeeded 참고). 그 사이에 나와 관련된 결과(예: 내 땅에 통행료가 두 번
+// 들어옴)가 여러 번 생기면, "최근 값 하나"만 남기는 방식으로는 먼저 생긴 결과가 나중 결과에
+// 덮어써져서 그대로 사라져버립니다 — 팝업이 아예 안 뜨는 것처럼 보이는 사고였습니다.
+// 그래서 최근 결과 하나만 저장하지 않고, 배열(resultLog)에 계속 쌓아두고 각 참가자 화면이
+// "내가 마지막으로 확인한 atLogLen 이후에 새로 생긴 것 중 내 것" 전부를 찾아서 차례로
+// 보여주는 방식으로 바꿨습니다. atLogLen은 그 결과가 log에 기록된 시점의 state.log.length라
+// 게임 안에서 항상 유일하고 단조 증가하므로, 이것만으로도 순서/중복 판단에 충분합니다.
+// entry는 kind가 "event"(복주머니/친척집/달토끼상점/복불복윷판/고속도로정체/송편가게)이면
+// playerId 하나에게만, kind가 "toll"(통행료)이면 payerId(낸 사람)/ownerId(땅주인) 두
+// 사람에게 각각 보여줍니다.
+function pushResultLog(state, entry) {
+  if (!Array.isArray(state.resultLog)) state.resultLog = [];
+  state.resultLog.push(entry);
+  // 메모리/저장 용량이 무한정 늘어나지 않도록 최근 것만 남깁니다. 서버 요청 한 번에 BOT이
+  // 최대 60턴까지 연달아 진행될 수 있으므로(runBotsIfNeeded의 guard), 그보다 넉넉히 큰
+  // 값으로 잡아 어떤 경우에도 한 번의 폴링 사이에 생긴 결과가 잘리지 않게 합니다.
+  if (state.resultLog.length > 400) state.resultLog.splice(0, state.resultLog.length - 400);
+}
+
+// ---------------------------------------------------------------------------
 // existingDonationEffects: 게임 시작 전(waiting) 상태에서 관리자가 이미 참가자별 후원을
 // 집계해뒀다면(수동 +1 버튼/SOOP 자동감지를 게임 시작 전부터 켜둔 경우) 그 값을 이어받기
 // 위한 선택 인자입니다({ [playerId]: donationEffect상태 } 형태). 넘기지 않으면 빈 맵으로 시작.
@@ -120,11 +144,12 @@ function initState(players, existingDonationEffects, existingDonationEnabled, ex
     pendingEvent: null,
     pendingToll: null,
     lastRoll: null,
-    // 복불복 윷판/친척집 미션처럼 "이번에 정확히 무슨 일이 있었는지"를 참가자 화면에서
-    // 크게 강조해 보여주기 위한 구조화된 결과(로그 텍스트를 파싱하지 않고 바로 읽게 함).
-    // atLogLen: 이 결과가 기록된 시점의 log.length — 클라이언트가 "새로 생긴 결과인지"를
-    // 문자열 비교 없이 판단하는 키로 씁니다.
-    lastEventResult: null,
+    // 복불복 윷판/친척집 미션/통행료처럼 "이번에 정확히 무슨 일이 있었는지"를 참가자 화면에서
+    // 크게 강조해 보여주기 위한 구조화된 결과 기록(로그 텍스트를 파싱하지 않고 바로 읽게 함).
+    // ★ "가장 최근 결과 하나"만 담던 예전 필드(lastEventResult/lastTollResult)를
+    // pushResultLog로 계속 쌓이는 배열로 교체했습니다 — 자세한 이유는 위 pushResultLog
+    // 함수의 주석 참고(BOT 연속 턴 중 결과가 덮어써져 사라지는 문제 수정).
+    resultLog: [],
     winnerId: null,
     log: ["게임을 시작합니다."],
     players: {},
@@ -501,22 +526,28 @@ function startEvent(state, playerId, tile, now) {
   } else if (tile.eventType === "traffic") {
     p.nextRollPenalty = true;
     state.log.push(`${p.name}: 고속도로 정체 (다음 이동 -1)`);
+    // 사용자 요청("모든 이벤트를 전부 팝업 표시"): 현금 증감이 없는 이벤트도 결과를 알 수
+    // 있도록 팝업 큐에 남깁니다. amount가 없으므로 효과음(sfx)은 울리지 않습니다.
+    pushResultLog(state, { kind: "event", type: "traffic", playerId, atLogLen: state.log.length });
     state.turnPhase = "awaiting-endturn";
   } else if (tile.eventType === "songpyeon") {
     const n = 5 + Math.floor(Math.random() * 6); // 5~10개(사용자 확정 사항 — 이전에는 1~3개)
     p.songpyeon += n;
     state.log.push(`${p.name}: 송편 토큰 +${n} (누적 ${p.songpyeon})`);
+    // 위 traffic과 동일한 이유로 팝업 큐에 남깁니다(현금 증감 없음 → 효과음 없음).
+    pushResultLog(state, { kind: "event", type: "songpyeon", count: n, totalSongpyeon: p.songpyeon, playerId, atLogLen: state.log.length });
     state.turnPhase = "awaiting-endturn";
   } else if (tile.eventType === "yut") {
     const { label, delta } = rollYut();
     if (delta >= 0) p.cash += delta;
     else chargePlayer(state, playerId, -delta, now);
     state.log.push(`${p.name}: 복불복 윷판 결과 "${label}" ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}원`);
-    // playerId를 함께 남겨두는 이유: state.lastEventResult는 방 전체에 하나뿐인 값이라, 이걸
-    // 누구 화면에 팝업으로 보여줘야 하는지 참가자 화면(player.html)에서 정확히 구분하기
-    // 위해서입니다(실제로 있었던 버그: 이게 없으면 BOT이나 다른 참가자 턴에 생긴 결과가,
-    // 그 이후 내 턴이 됐을 때 마치 내 결과인 것처럼 뒤늦게 잘못 표시될 수 있었습니다).
-    state.lastEventResult = { type: "yut", label, delta, atLogLen: state.log.length, playerId };
+    // playerId를 함께 남겨두는 이유: 누구 화면에 팝업으로 보여줘야 하는지 참가자 화면
+    // (player.html)에서 정확히 구분하기 위해서입니다(실제로 있었던 버그: 이게 없으면 BOT이나
+    // 다른 참가자 턴에 생긴 결과가, 그 이후 내 턴이 됐을 때 마치 내 결과인 것처럼 뒤늦게
+    // 잘못 표시될 수 있었습니다). pushResultLog를 쓰는 이유는 파일 상단 주석 참고(BOT 연속
+    // 턴 중 결과가 덮어써져 사라지는 문제 수정).
+    pushResultLog(state, { kind: "event", type: "yut", label, delta, playerId, atLogLen: state.log.length });
     state.turnPhase = "awaiting-endturn";
   }
 }
@@ -533,21 +564,21 @@ function applyEventChoice(state, playerId, choice, now) {
     state.log.push(`${p.name}: 복주머니 카드 결과 ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}`);
     // 요청: "모든 이벤트 결과는 윷놀이 결과와 동일한 방식으로 팝업으로 안내" (수입/지출
     // 이벤트 한정) — 복주머니도 현금 증감이 있는 이벤트이므로 yut/relative와 같은
-    // lastEventResult 패턴을 따릅니다. playerId를 남겨두는 이유는 위 rollYut 쪽 주석 참고
+    // pushResultLog 패턴을 따릅니다. playerId를 남겨두는 이유는 위 rollYut 쪽 주석 참고
     // (누구 화면에 보여줘야 할 결과인지 구분하기 위함 — BOT/다른 참가자 결과가 내 턴에
     // 뒤늦게 잘못 뜨는 걸 막는 용도).
-    state.lastEventResult = { type: "market", amount: delta, atLogLen: state.log.length, playerId };
+    pushResultLog(state, { kind: "event", type: "market", amount: delta, playerId, atLogLen: state.log.length });
   } else if (ev.type === "relative") {
     if (choice === "perform") {
       const bonus = 5000 + Math.floor(Math.random() * 6) * 1000;
       p.cash += bonus;
       state.log.push(`${p.name}: 친척집 미션 성공! +${bonus.toLocaleString()}원`);
-      state.lastEventResult = { type: "relative", outcome: "success", amount: bonus, atLogLen: state.log.length, playerId };
+      pushResultLog(state, { kind: "event", type: "relative", outcome: "success", amount: bonus, playerId, atLogLen: state.log.length });
     } else {
       // 패스하면 어떤 경우에도 돈을 받지 못합니다(사용자 확정 사항) — 기존에도 그랬지만,
       // 참가자 화면에서 "0원"임이 분명히 보이도록 로그·결과 배너 문구를 명확히 함.
       state.log.push(`${p.name}: 친척집 미션 패스 (획득 금액 없음)`);
-      state.lastEventResult = { type: "relative", outcome: "pass", amount: 0, atLogLen: state.log.length, playerId };
+      pushResultLog(state, { kind: "event", type: "relative", outcome: "pass", amount: 0, playerId, atLogLen: state.log.length });
     }
   } else if (ev.type === "shop") {
     const item = ["toll-free", "reroll", "half-build"].includes(choice) ? choice : null;
@@ -556,11 +587,11 @@ function applyEventChoice(state, playerId, choice, now) {
       p.items.push(item);
       state.log.push(`${p.name}: 달토끼 상점에서 ${itemLabel(item)} 구매`);
       // 아이템 구매는 15,000원 지출 이벤트이므로 다른 수입/지출 이벤트와 동일하게
-      // lastEventResult를 남겨 참가자 화면에 팝업으로 안내합니다.
-      state.lastEventResult = { type: "shop", outcome: "bought", item, amount: -15000, atLogLen: state.log.length, playerId };
+      // pushResultLog로 남겨 참가자 화면에 팝업으로 안내합니다.
+      pushResultLog(state, { kind: "event", type: "shop", outcome: "bought", item, amount: -15000, playerId, atLogLen: state.log.length });
     } else {
       state.log.push(`${p.name}: 달토끼 상점 패스`);
-      state.lastEventResult = { type: "shop", outcome: "pass", item: null, amount: 0, atLogLen: state.log.length, playerId };
+      pushResultLog(state, { kind: "event", type: "shop", outcome: "pass", item: null, amount: 0, playerId, atLogLen: state.log.length });
     }
   }
   state.pendingEvent = null;
@@ -594,13 +625,15 @@ function resolveToll(state, playerId, useItem, now) {
         (paid < amount ? " (자금 부족으로 파산)" : "")
     );
     // 사용자 요청: "통행료 수입과 통행료 지출도 팝업에 반영". 통행료는 지불하는 사람(지출)과
-    // 땅주인(수입) 두 사람에게 동시에 영향을 주는 이벤트라, 위 lastEventResult(항상 "지금
-    // 내 턴인 사람"의 결과 하나만 다루도록 만들어진 필드)와는 별도로 lastTollResult에
-    // payerId/ownerId를 모두 남깁니다 — 땅주인은 자기 턴이 아닐 때(남이 내 땅을 밟았을 때)
-    // 통행료를 받으므로, 참가자 화면(player.html)이 이 둘 중 자기 id와 맞는 쪽을 각자
-    // 판단해서 지불한 사람에게는 지출로, 땅주인에게는 수입으로 따로 보여줍니다.
+    // 땅주인(수입) 두 사람에게 동시에 영향을 주는 이벤트라, kind: "event"(항상 "지금 내
+    // 턴인 사람"의 결과만 다룸)와는 별도로 kind: "toll" 항목에 payerId/ownerId를 모두
+    // 남깁니다 — 땅주인은 자기 턴이 아닐 때(남이 내 땅을 밟았을 때) 통행료를 받으므로,
+    // 참가자 화면(player.html)이 이 둘 중 자기 id와 맞는 쪽을 각자 판단해서 지불한 사람에게는
+    // 지출로, 땅주인에게는 수입으로 따로 보여줍니다. pushResultLog를 쓰는 이유는 파일 상단
+    // 주석 참고(BOT 연속 턴 중 여러 번 통행료가 발생해도 하나도 빠짐없이 큐에 쌓입니다).
     if (owner && paid > 0) {
-      state.lastTollResult = {
+      pushResultLog(state, {
+        kind: "toll",
         payerId: playerId,
         payerName: p.name,
         ownerId: pending.ownerId,
@@ -608,7 +641,7 @@ function resolveToll(state, playerId, useItem, now) {
         amount: paid,
         bankrupt: paid < amount,
         atLogLen: state.log.length,
-      };
+      });
     }
   }
   // 통행료를 내다가 파산했다면 턴을 마무리할 사람이 없으므로 곧바로 다음 사람에게 넘김
