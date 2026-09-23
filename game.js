@@ -93,12 +93,21 @@ function donationRate(state, playerId) {
   return de ? de.cumulativeRate : 0;
 }
 
+// 0~1 사이로 안전하게 자름(숫자가 아니거나 범위를 벗어나면 기본 0.6).
+function clampVolume(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0.6;
+  return Math.max(0, Math.min(1, n));
+}
+
 // ---------------------------------------------------------------------------
 // existingDonationEffects: 게임 시작 전(waiting) 상태에서 관리자가 이미 참가자별 후원을
 // 집계해뒀다면(수동 +1 버튼/SOOP 자동감지를 게임 시작 전부터 켜둔 경우) 그 값을 이어받기
 // 위한 선택 인자입니다({ [playerId]: donationEffect상태 } 형태). 넘기지 않으면 빈 맵으로 시작.
 // existingDonationEnabled: 방 전체 후원 효과 켜짐/꺼짐 스위치(기본 true).
-function initState(players, existingDonationEffects, existingDonationEnabled) {
+// existingAudioSettings: 게임 시작 전(waiting)부터 관리자가 BGM 켜짐/꺼짐·음량을 미리
+// 맞춰뒀을 수 있으므로, 있으면 그대로 이어받습니다(donationEffects와 동일한 패턴).
+function initState(players, existingDonationEffects, existingDonationEnabled, existingAudioSettings) {
   const st = {
     phase: "playing",
     turnOrder: players.map((p) => p.id),
@@ -120,6 +129,16 @@ function initState(players, existingDonationEffects, existingDonationEnabled) {
     properties: {},
     donationEffects: existingDonationEffects || {},
     donationEnabled: existingDonationEnabled !== false,
+    // 참가자 화면(player.html)의 BGM/효과음을 관리자 화면에서 방 전체에 동일하게 켜고/끄고
+    // 음량을 조절할 수 있도록 방 상태에 함께 둡니다(사용자 확정: 방 전체 공유 설정, 서버 저장).
+    // volume은 0~1 사이 값(HTML5 Audio.volume과 동일한 범위)입니다.
+    audioSettings:
+      existingAudioSettings && typeof existingAudioSettings === "object"
+        ? {
+            bgmOn: existingAudioSettings.bgmOn !== false,
+            volume: clampVolume(existingAudioSettings.volume),
+          }
+        : { bgmOn: true, volume: 0.6 },
   };
   players.forEach((p) => {
     st.players[p.id] = {
@@ -894,4 +913,5 @@ module.exports = {
   assetValue,
   addDonation,
   donationRate,
+  clampVolume,
 };
