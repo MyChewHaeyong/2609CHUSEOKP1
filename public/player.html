@@ -378,13 +378,16 @@
     </div>
     <button id="rankReopenBtn" class="hidden secondary rank-reopen-btn">🏆 최종 순위 다시 보기</button>
 
-    <!-- 이벤트 결과 팝업(요청: "팔도마블에서 모든 이벤트 결과는 윷놀이 결과와 동일한 방식으로
-         팝업으로 안내" — 수입/지출이 있는 이벤트(복주머니/친척집/달토끼 상점/복불복 윷판)에
-         적용. 원래 윷놀이 결과 전용이었던 팝업을 4가지 이벤트가 공통으로 쓰도록 일반화한
-         것으로, 제목/아이콘/문구만 이벤트 종류에 따라 바뀝니다 — renderEventResultModal 참고.
-         고속도로 정체(이동 페널티만 있음)·송편가게(현금이 아닌 송편 토큰 지급)는 현금
-         수입/지출이 아니므로 이 팝업 대상에서 제외했습니다(사용자 확인: "수입, 지출에
-         해당하는 이벤트들"). -->
+    <!-- 결과 안내 팝업(요청: "모든 이벤트를 전부 팝업 표시" + "통행료 수입/지출도 팝업에
+         반영"). 복주머니/친척집/달토끼 상점/복불복 윷판/고속도로 정체/송편가게 6가지 이벤트와
+         통행료(지불/수입)까지 전부 이 팝업 하나를 공유합니다 — 제목/아이콘/문구만 종류에 따라
+         바뀝니다. 예전에는 이벤트용(eventResultBackdrop)과 통행료용(tollResultBackdrop)이
+         서로 다른 모달이었는데(통행료는 "내 턴이 아닐 때도" 뜰 수 있어 표시 조건이 달랐음),
+         지금은 하나로 합치고 대신 "보여줄 결과들의 줄(state.resultLog)"을 순서대로 하나씩
+         꺼내 보여주는 방식으로 바꿨습니다(자세한 이유는 game.js의 pushResultLog 주석,
+         동작은 아래 processResultLog/showNextQueuedResult 참고) — BOT이 연달아 여러 턴을
+         진행하는 동안 나와 관련된 결과가 여러 번 생겨도(예: 여러 BOT이 잇달아 내 땅을 밟음)
+         하나도 빠짐없이 확인 버튼을 누를 때마다 다음 결과가 이어서 뜹니다. -->
     <div class="rank-modal-backdrop hidden" id="eventResultBackdrop">
       <div class="rank-modal-card yut-modal-card">
         <div class="yut-modal-icon" id="eventResultIcon"></div>
@@ -392,21 +395,6 @@
         <div class="yut-modal-label" id="eventResultLabel"></div>
         <div class="yut-modal-amount" id="eventResultAmount"></div>
         <button id="eventResultCloseBtn" class="secondary rank-modal-close">확인</button>
-      </div>
-    </div>
-
-    <!-- 통행료 결과 팝업(사용자 요청: "통행료 수입과 통행료 지출도 팝업에 반영"). 위 이벤트
-         결과 팝업(eventResultBackdrop)과 일부러 완전히 분리된 별도 모달입니다 — 통행료는
-         한 번에 두 사람(내는 사람=지출, 땅주인=수입)에게 영향을 주고, 특히 땅주인은 "내 턴이
-         아닐 때"(남이 내 땅을 밟았을 때) 결과를 받기 때문에, "내 턴일 때만" 뜨는 기존 이벤트
-         팝업과는 표시 조건 자체가 다릅니다 — renderTollResultModal 참고. -->
-    <div class="rank-modal-backdrop hidden" id="tollResultBackdrop">
-      <div class="rank-modal-card yut-modal-card">
-        <div class="yut-modal-icon" id="tollResultIcon"></div>
-        <h2 id="tollResultTitle">통행료</h2>
-        <div class="yut-modal-label" id="tollResultLabel"></div>
-        <div class="yut-modal-amount" id="tollResultAmount"></div>
-        <button id="tollResultCloseBtn" class="secondary rank-modal-close">확인</button>
       </div>
     </div>
 
@@ -529,16 +517,18 @@
   // 거치는 동안 계속 이 기준점과 비교해서 "이번 턴 전체"의 누적 수입/지출을 보여줍니다.
   // 내 턴이 아니게 되거나 새로 주사위를 굴리기 전(awaiting-roll) 단계로 돌아오면 null로 리셋.
   let turnResultBaseline = null;
-  // 이벤트 결과 팝업(복주머니/친척집/달토끼 상점/복불복 윷판)을 이미 보여준 적 있는
-  // 결과인지 추적하는 키("이벤트타입:그 결과가 기록된 시점의 state.log 길이"). 턴이
-  // 바뀌어도 리셋하지 않습니다 — 정확히 같은 키는 정확히 같은 결과 하나뿐이므로, 값
-  // 자체가 "이미 봤다"는 표시로 충분합니다. 페이지를 처음 열었을 때 이미 있던 옛 결과는
-  // renderActionPanel의 최초 1회 시딩에서 걸러집니다.
-  let lastEventResultKey = null;
-  // 통행료 결과 팝업을 이미 보여준 적 있는지 추적하는 키. lastEventResultKey와 똑같은
-  // 이유로 턴이 바뀌어도 리셋하지 않고, 페이지를 처음 열었을 때 이미 있던 옛 결과는 역시
-  // 최초 1회 시딩에서 걸러집니다(아래 eventTrackersSeeded 참고).
-  let lastTollResultKey = null;
+  // 결과 안내 팝업(이벤트 6종 + 통행료)의 진행 상태를 추적하는 값들입니다.
+  // - lastSeenResultLogLen: state.resultLog에서 "여기까지는 이미 확인했다"는 커서
+  //   (그 결과가 기록된 시점의 state.log 길이 = atLogLen). 이 값보다 atLogLen이 큰
+  //   항목만 새 결과로 취급합니다. 턴이 바뀌어도 리셋하지 않고 계속 앞으로만 증가합니다.
+  //   페이지를 처음 열었을 때 이미 있던 옛 결과는 renderActionPanel의 최초 1회 시딩에서
+  //   이 값을 그 시점의 최댓값으로 맞춰두어 걸러집니다(아래 eventTrackersSeeded 참고).
+  // - resultQueue: 아직 화면에 못 보여준(확인 버튼 대기 중인) 결과들을 순서대로 담아두는
+  //   큐. 한 번의 폴링 사이에 나와 관련된 결과가 여러 개 생겨도(BOT 연속 턴 등) 여기 전부
+  //   쌓아두고, 확인 버튼을 누를 때마다 하나씩 꺼내 보여줍니다(자세한 배경은 위 결과 안내
+  //   팝업 DOM 주석과 processResultLog 함수 참고).
+  let lastSeenResultLogLen = 0;
+  let resultQueue = [];
   let lastTolls = {}; // { [칸 번호]: 현재 통행료 } — 서버가 game.js의 tollFor()로 직접 계산해서 내려줌
   let lastTollsPlain = {}; // { [칸 번호]: 후원 효과를 적용하지 않은 원래 통행료 } — tollForPlain()로 계산
   // 칸이 정사각형 테두리(0~100%)에 딱 붙으면 칸의 절반이 컨테이너 밖으로 잘려서 안 보이므로,
@@ -924,9 +914,9 @@
     el.textContent = text;
   }
 
-  // 페이지를 처음 열었을 때(또는 새로고침) 이미 존재하던 지난 이벤트/통행료 결과가 방금 새로
-  // 생긴 것처럼 갑자기 튀어나오지 않도록, 그 시점의 결과는 "이미 봤다"고 딱 한 번만
-  // 미리 기록해둡니다. (위 lastEventResultKey/lastTollResultKey 참고)
+  // 페이지를 처음 열었을 때(또는 새로고침) 이미 존재하던 지난 결과들이 방금 새로 생긴
+  // 것처럼 갑자기 튀어나오지 않도록, 그 시점까지의 결과는 "이미 봤다"고 딱 한 번만
+  // 미리 커서를 맞춰둡니다. (위 lastSeenResultLogLen 참고)
   let eventTrackersSeeded = false;
   function renderActionPanel(state) {
     const panel = $("actionPanel");
@@ -935,21 +925,21 @@
 
     if (!eventTrackersSeeded) {
       eventTrackersSeeded = true;
-      const evr0 = state.lastEventResult;
-      if (evr0 && ["market", "relative", "shop", "yut"].includes(evr0.type)) {
-        lastEventResultKey = evr0.type + ":" + evr0.atLogLen;
+      const log0 = state.resultLog;
+      if (Array.isArray(log0)) {
+        for (const entry of log0) {
+          if (entry.atLogLen > lastSeenResultLogLen) lastSeenResultLogLen = entry.atLogLen;
+        }
       }
-      const tr0 = state.lastTollResult;
-      if (tr0) lastTollResultKey = tr0.payerId + ":" + tr0.ownerId + ":" + tr0.atLogLen;
     }
 
-    // 통행료 결과 팝업(renderTollResultModal 참고)은 "내 턴일 때만"이 아니라 매 폴링마다
-    // 무조건 확인합니다 — 땅주인은 남이 내 땅을 밟았을 때(=내 턴이 아닐 때) 통행료를
-    // 받으므로, isMyTurn으로 게이트를 걸면 그 경우를 놓치게 됩니다. 다만 내 화면이 다른
-    // 액션(주사위 애니메이션 등)을 처리 중일 때 팝업이 겹쳐 뜨는 건 기존 이벤트 팝업과
-    // 동일하게 피하고 싶으므로 busy일 때는 건너뜁니다(busy가 풀리면 곧바로 다시 그려집니다
-    // — sendAction/rollDiceWithAnimation의 finally 블록 참고).
-    if (!busy) renderTollResultModal(state);
+    // 결과 안내 팝업(processResultLog 참고)은 "내 턴일 때만"이 아니라 매 폴링마다 무조건
+    // 확인합니다 — 통행료 수입은 땅주인이 남이 내 땅을 밟았을 때(=내 턴이 아닐 때) 받으므로,
+    // isMyTurn으로 게이트를 걸면 그 경우를 놓치게 됩니다. 다만 내 화면이 다른 액션(주사위
+    // 애니메이션 등)을 처리 중일 때 팝업이 겹쳐 뜨는 건 피하고 싶으므로 busy일 때는
+    // 건너뜁니다(busy가 풀리면 곧바로 다시 그려집니다 — sendAction/rollDiceWithAnimation의
+    // finally 블록 참고).
+    if (!busy) processResultLog(state);
 
     // 이번 턴 누적 수입/지출 박스 갱신: 내 턴이 아니게 되거나 새로 주사위를 굴리기 전
     // 단계(awaiting-roll)로 돌아오면 리셋하고, 그 사이(구매/건설/통행료/이벤트/턴마무리
@@ -959,22 +949,24 @@
     if (!isMyTurn || state.turnPhase === "awaiting-roll") {
       turnResultBaseline = null;
       if (detailEl) detailEl.classList.add("hidden");
-      $("eventResultBackdrop").classList.add("hidden");
+      // 주의: 여기서 eventResultBackdrop을 강제로 숨기지 않습니다 — 통행료 수입 팝업처럼
+      // "내 턴이 아닐 때" 떠야 하는 결과도 이제 같은 모달을 쓰기 때문에, 턴이 바뀌었다고
+      // 무조건 닫아버리면 그 팝업이 뜨자마자 사라지는 사고가 납니다. 닫기는 오직 사용자가
+      // 확인 버튼/배경 클릭/ESC로 직접 닫을 때만 일어납니다.
     } else if (!busy) {
       // 내가 주사위를 눌러서 이번 턴이 시작된 게 아니라(예: 관리자가 칸으로 강제 이동시켜서
       // 곧바로 이벤트가 발동/선택 화면이 뜬 경우, 또는 턴 도중 새로고침), 기준점이 아직
       // 없는 상태일 수 있습니다. 그럴 땐 지금 이 시점을 새 기준점으로 잡아둡니다. 다만
       // 관리자가 즉시 처리형 이벤트(고속도로 정체/송편가게/윷판)로 이미 이동시킨 경우처럼,
-      // 그 결과가 이 기준점보다 먼저(같은 순간에) 로그에 남았을 수도 있으므로, 아래 이벤트
-      // 결과 팝업은 이 기준점과 무관하게 "이미 보여준 적 있는지"만으로 따로
-      // 판단합니다(renderEventResultModal 참고) — 그래야 관리자가
-      // 즉시 처리형 이벤트 칸으로 이동시킨 경우에도 결과가 화면에 반드시 나타납니다.
+      // 그 결과가 이 기준점보다 먼저(같은 순간에) 로그에 남았을 수도 있으므로, 결과 안내
+      // 팝업은 이 기준점과 무관하게 lastSeenResultLogLen 커서만으로 따로 판단합니다(위
+      // processResultLog 호출 참고) — 그래야 관리자가 즉시 처리형 이벤트 칸으로 이동시킨
+      // 경우에도 결과가 화면에 반드시 나타납니다.
       if (!turnResultBaseline) {
         const meNow = state.players[session.playerId];
         turnResultBaseline = { cash: meNow ? meNow.cash : 0, logLen: (state.log || []).length };
       }
       if (detailEl) renderDiceResultDetail(turnResultBaseline.cash, turnResultBaseline.logLen, state);
-      renderEventResultModal(state);
     }
 
     if (!isMyTurn) return;
@@ -1472,37 +1464,30 @@
     el.classList.remove("hidden");
   }
 
-  // 이벤트 결과 팝업(요청: "팔도마블에서 모든 이벤트 결과는 윷놀이 결과와 동일한 방식으로
-  // 팝업으로 안내" — 뒤이은 사용자 확인: "수입, 지출에 해당하는 이벤트들"만 대상). 복불복
-  // 윷판 전용이었던 팝업을 4가지 현금 수입/지출 이벤트가 공통으로 쓰도록 일반화했습니다:
-  //   · market(복주머니 카드): 카드 결과 금액 그대로 ±표시
-  //   · relative(친척집 미션): 성공 시 보상 금액, 패스 시 "0원"
-  //   · shop(달토끼 상점): 구매 시 -15,000원, 패스 시 "0원"
-  //   · yut(복불복 윷판): 기존 그대로(도/개/걸/윷/모 라벨 + ±금액)
-  // 고속도로 정체(이동 페널티만 있고 현금 변화 없음)와 송편가게(현금이 아닌 송편 토큰
-  // 지급)는 "수입/지출" 이벤트가 아니므로 이 팝업 대상에서 제외했습니다 — 두 이벤트는
-  // 기존처럼 진행 기록(로그)에만 남습니다.
-  // state.lastEventResult는 서버 상태 전체에서 하나뿐인 값이라, "내가 이미 보여준 적 있는
-  // 결과인지"는 "이벤트타입:atLogLen"(그 결과가 기록된 시점의 로그 길이) 조합 키로
-  // 구분합니다(turnResultBaseline과는 비교하지 않습니다 — 관리자가 즉시 처리형 이벤트 칸으로
-  // 강제 이동시키면 "이동 + 이벤트 처리"가 한 번에 끝나서 기준점을 잡을 새도 없이 이미
-  // 결과가 나 있는 경우가 있는데, 그때도 결과가 반드시 화면에 나타나야 하기 때문입니다).
-  // ★ 주의(실제로 있었던 버그): 이 함수를 부르는 renderActionPanel의 호출 지점 자체는
-  // isMyTurn일 때만 실행되긴 하지만, 그렇다고 이 시점의 state.lastEventResult가 항상 "지금
-  // 막 나에게 생긴 결과"인 건 아닙니다 — BOT이나 다른 참가자 턴에 이벤트가 생겨도(그때는
-  // 이 함수 자체가 애초에 안 불려서) lastEventResultKey가 갱신될 기회가 없기 때문에, 그
-  // "남의 옛날 결과"가 그대로 남아있다가 내 턴이 되는 순간(새 이벤트가 없어도) 마치 내
-  // 결과인 것처럼 뒤늦게 잘못 표시되는 사고가 실제로 있었습니다. 그래서 반드시
-  // evr.playerId까지 나(session.playerId)와 일치하는지 함께 확인합니다 — 키만 다른지
-  // 보는 것만으로는 "누구 결과인지"를 구분할 수 없습니다.
-  function renderEventResultModal(state) {
-    const evr = state.lastEventResult;
-    if (!evr || !["market", "relative", "shop", "yut"].includes(evr.type)) return;
-    if (evr.playerId && evr.playerId !== session.playerId) return; // 나(BOT 포함 다른 참가자)의 결과가 아니면 표시하지 않음
-    const key = evr.type + ":" + evr.atLogLen;
-    if (key === lastEventResultKey) return; // 이미 보여준 결과
-    lastEventResultKey = key;
+  // 결과 안내 팝업(요청: "모든 이벤트를 전부 팝업 표시" + "통행료 수입과 통행료 지출도
+  // 팝업에 반영"). state.resultLog(game.js의 pushResultLog가 쌓는 배열)를 훑어서 나와
+  // 관련된 새 결과를 큐에 담아두고(processResultLog), 지금 팝업이 안 떠 있으면 큐의 맨 앞
+  // 하나를 바로 보여주며(showNextQueuedResult), 확인 버튼을 누를 때마다 다음 것을 이어서
+  // 보여줍니다(아래 confirm/backdrop/ESC 핸들러 참고). 다루는 종류:
+  //   · market(복주머니 카드)/relative(친척집 미션)/shop(달토끼 상점)/yut(복불복 윷판):
+  //     현금 수입·지출이 있는 4종 — 금액과 함께 승/패 스타일(및 효과음)로 표시.
+  //   · traffic(고속도로 정체)/songpyeon(송편가게): 현금 변화가 없는 2종 — 무슨 일이
+  //     있었는지만 안내하고 금액·효과음은 없음("모든 이벤트를 전부 팝업 표시" 요청으로 새로
+  //     추가됨, 이전에는 로그에만 남고 팝업 대상에서 제외돼 있었음).
+  //   · toll(통행료): 지불한 사람에게는 지출(-)로, 땅주인에게는 수입(+)으로 각자 다르게
+  //     표시. 땅주인은 자기 턴이 아니어도(남이 내 땅을 밟았을 때) 받아야 하므로, 아래
+  //     processResultLog는 isMyTurn과 무관하게 매 폴링마다 호출됩니다(renderActionPanel
+  //     참고).
+  // ★ 주의(실제로 있었던 버그 2가지, 자세한 배경은 game.js의 pushResultLog 주석 참고):
+  //   (1) "누구 결과인지" 구분 안 함 — BOT이나 다른 참가자 턴에 생긴 결과가 내 턴이 되는
+  //       순간 마치 내 결과인 것처럼 뒤늦게 잘못 표시되던 문제. → entry.playerId(이벤트)
+  //       또는 entry.payerId/ownerId(통행료)가 나(session.playerId)와 맞는지 반드시 확인.
+  //   (2) "최근 값 하나만" 저장 — BOT이 한 번에 여러 턴을 연달아 진행하는 동안(최대 60턴)
+  //       나와 관련된 결과가 여러 번 생기면 먼저 생긴 게 나중 것에 덮어써져 사라지던 문제.
+  //       → resultLog는 배열이고 lastSeenResultLogLen 커서보다 뒤에 있는 항목을 전부
+  //       큐에 담으므로, 하나도 빠짐없이 순서대로 보여줄 수 있습니다.
 
+  function buildEventDisplay(evr) {
     let title, icon, label, amountText, amountCls;
     if (evr.type === "yut") {
       title = "복불복 윷놀이 결과";
@@ -1532,50 +1517,21 @@
       } else {
         icon = "🙅"; label = "구매 안 함(패스)"; amountText = "0원"; amountCls = "";
       }
+    } else if (evr.type === "traffic") {
+      // 현금 변화가 없으므로 amountText를 비워 금액 줄을 숨기고, amountCls도 비워
+      // 효과음이 재생되지 않게 합니다(showResultDisplay 참고).
+      title = "고속도로 정체"; icon = "🚧"; label = "다음 이동 -1칸"; amountText = ""; amountCls = "";
+    } else if (evr.type === "songpyeon") {
+      title = "송편가게"; icon = "🥮";
+      label = "송편 토큰 +" + evr.count + "개 (누적 " + evr.totalSongpyeon + "개)";
+      amountText = ""; amountCls = "";
+    } else {
+      return null;
     }
-
-    $("eventResultTitle").textContent = title;
-    $("eventResultIcon").textContent = icon;
-    const labelEl = $("eventResultLabel");
-    labelEl.textContent = label;
-    labelEl.classList.toggle("hidden", !label);
-    const amountEl = $("eventResultAmount");
-    amountEl.textContent = amountText;
-    amountEl.className = "yut-modal-amount" + (amountCls ? " " + amountCls : "");
-    $("eventResultBackdrop").classList.remove("hidden");
-
-    // 요청: "수입이 발생하는 모든 이벤트"/"지출이 발생하는 모든 이벤트"에 효과음 적용(시작·
-    // 귀성길 용돈은 예외) — 이 팝업이 다루는 4종(복주머니/친척집/달토끼 상점/복불복 윷판)이
-    // 정확히 그 범위와 같고, 귀성길 통과 용돈이나 게임 시작은 애초에 이 팝업 대상이 아니므로
-    // 자연스럽게 예외가 됩니다. amountCls로 이미 승/패(수입/지출)가 갈려 있어 그대로 재사용.
-    if (amountCls === "win") {
-      const s = $("sfxIncomeAudio");
-      if (s) { s.currentTime = 0; s.play().catch(() => {}); }
-    } else if (amountCls === "lose") {
-      const s = $("sfxExpenseAudio");
-      if (s) { s.currentTime = 0; s.play().catch(() => {}); }
-    }
+    return { title, icon, label, amountText, amountCls };
   }
 
-  // 통행료 결과 팝업(사용자 요청: "통행료 수입과 통행료 지출도 팝업에 반영"). 위
-  // renderEventResultModal과 다른 점: (1) 위 함수는 "내 턴일 때만" 호출되지만, 이 함수는
-  // 매 폴링마다(내 턴 여부와 무관하게) 호출됩니다 — 통행료는 지불하는 사람(내 턴에 발생)과
-  // 땅주인(남의 턴에 발생할 수 있음) 양쪽에게 영향을 주기 때문입니다. (2) 그래서 "이게 내
-  // 결과인지"를 evr.playerId 하나가 아니라 payerId/ownerId 둘 중 어느 쪽인지로 판단해서,
-  // 지불한 사람에게는 지출(-)로, 땅주인에게는 수입(+)으로 각자 다르게 보여줍니다. 같은
-  // state.lastTollResult를 payerId 쪽 화면과 ownerId 쪽 화면이 동시에 폴링해서 각자
-  // 판단하므로, 실제로 한 번의 통행료 지불에 대해 두 사람이 각자 자기 화면에서 서로 다른
-  // 팝업을 보게 됩니다.
-  function renderTollResultModal(state) {
-    const tr = state.lastTollResult;
-    if (!tr) return;
-    const isPayer = tr.payerId === session.playerId;
-    const isOwner = tr.ownerId === session.playerId;
-    if (!isPayer && !isOwner) return; // 나와 무관한(둘 다 남/BOT인) 통행료는 표시하지 않음
-    const key = tr.payerId + ":" + tr.ownerId + ":" + tr.atLogLen;
-    if (key === lastTollResultKey) return; // 이미 보여준 결과
-    lastTollResultKey = key;
-
+  function buildTollDisplay(tr, isPayer) {
     let title, icon, label, amountText, amountCls;
     if (isPayer) {
       title = "통행료 지불";
@@ -1590,25 +1546,74 @@
       amountText = "+" + fmt(tr.amount) + "원";
       amountCls = "win";
     }
+    return { title, icon, label, amountText, amountCls };
+  }
 
-    $("tollResultTitle").textContent = title;
-    $("tollResultIcon").textContent = icon;
-    const labelEl = $("tollResultLabel");
-    labelEl.textContent = label;
-    labelEl.classList.toggle("hidden", !label);
-    const amountEl = $("tollResultAmount");
-    amountEl.textContent = amountText;
-    amountEl.className = "yut-modal-amount" + (amountCls ? " " + amountCls : "");
-    $("tollResultBackdrop").classList.remove("hidden");
+  // resultLog 항목 하나가 "지금 이 화면(session.playerId)에 보여줘야 할 결과"인지 판단하고,
+  // 맞다면 화면에 그릴 데이터를 만들어 돌려줍니다(아니면 null).
+  function buildResultDisplay(entry) {
+    if (entry.kind === "event") {
+      if (entry.playerId !== session.playerId) return null; // 나(BOT 포함 다른 참가자)의 결과가 아니면 표시하지 않음
+      return buildEventDisplay(entry);
+    } else if (entry.kind === "toll") {
+      const isPayer = entry.payerId === session.playerId;
+      const isOwner = entry.ownerId === session.playerId;
+      if (!isPayer && !isOwner) return null; // 나와 무관한(둘 다 남/BOT인) 통행료는 표시하지 않음
+      return buildTollDisplay(entry, isPayer);
+    }
+    return null;
+  }
 
-    // 위 renderEventResultModal과 동일한 이유로 효과음도 함께 재생합니다(지불=지출 효과음,
-    // 수입=수입 효과음).
-    if (amountCls === "win") {
+  function showResultDisplay(display) {
+    $("eventResultTitle").textContent = display.title;
+    $("eventResultIcon").textContent = display.icon;
+    const labelEl = $("eventResultLabel");
+    labelEl.textContent = display.label;
+    labelEl.classList.toggle("hidden", !display.label);
+    const amountEl = $("eventResultAmount");
+    amountEl.textContent = display.amountText;
+    amountEl.className = "yut-modal-amount" + (display.amountCls ? " " + display.amountCls : "");
+    amountEl.classList.toggle("hidden", !display.amountText);
+    $("eventResultBackdrop").classList.remove("hidden");
+
+    // 요청: "수입이 발생하는 모든 이벤트"/"지출이 발생하는 모든 이벤트"에 효과음 적용(시작·
+    // 귀성길 용돈은 예외). amountCls가 없는 항목(traffic/songpyeon)은 효과음이 울리지
+    // 않습니다.
+    if (display.amountCls === "win") {
       const s = $("sfxIncomeAudio");
       if (s) { s.currentTime = 0; s.play().catch(() => {}); }
-    } else if (amountCls === "lose") {
+    } else if (display.amountCls === "lose") {
       const s = $("sfxExpenseAudio");
       if (s) { s.currentTime = 0; s.play().catch(() => {}); }
+    }
+  }
+
+  // 큐에 대기 중인 결과가 있으면 맨 앞의 것을 꺼내 보여줍니다. 큐가 비어 있으면 아무 것도
+  // 하지 않습니다(모달은 열려있지 않은 채로 둠).
+  function showNextQueuedResult() {
+    if (resultQueue.length === 0) return;
+    const next = resultQueue.shift();
+    showResultDisplay(next);
+  }
+
+  // 매 폴링마다 호출됩니다(renderActionPanel 참고, isMyTurn 여부와 무관). state.resultLog를
+  // 훑어서 lastSeenResultLogLen 커서보다 뒤에 있는(=아직 안 본) 항목 중 나와 관련된 것만
+  // 큐에 담고, 커서를 스캔한 항목 전체의 최댓값으로 갱신합니다(관련 없는 항목도 "지나갔다"고
+  // 표시해야 다음 폴링에서 또 스캔하지 않습니다). 지금 팝업이 안 떠 있는 상태라면 큐의 첫
+  // 항목을 바로 보여줍니다.
+  function processResultLog(state) {
+    const log = state.resultLog;
+    if (!Array.isArray(log) || log.length === 0) return;
+    let maxSeen = lastSeenResultLogLen;
+    for (const entry of log) {
+      if (entry.atLogLen <= lastSeenResultLogLen) continue;
+      if (entry.atLogLen > maxSeen) maxSeen = entry.atLogLen;
+      const display = buildResultDisplay(entry);
+      if (display) resultQueue.push(display);
+    }
+    lastSeenResultLogLen = maxSeen;
+    if (resultQueue.length && $("eventResultBackdrop").classList.contains("hidden")) {
+      showNextQueuedResult();
     }
   }
 
@@ -1733,21 +1738,16 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("rankModalBackdrop").classList.contains("hidden")) $("rankModalCloseBtn").click();
     if (e.key === "Escape" && !$("eventResultBackdrop").classList.contains("hidden")) $("eventResultCloseBtn").click();
-    if (e.key === "Escape" && !$("tollResultBackdrop").classList.contains("hidden")) $("tollResultCloseBtn").click();
   });
-  // 이벤트 결과 팝업 닫기(확인 버튼 / 바깥 클릭)
+  // 결과 안내 팝업 닫기(확인 버튼 / 바깥 클릭 / ESC 공통) — 큐에 다음 결과가 남아있으면
+  // 곧바로 이어서 보여줍니다(showNextQueuedResult 참고). 이렇게 해야 BOT 연속 턴 중 나와
+  // 관련된 결과가 여러 개 쌓였을 때 확인을 누를 때마다 하나씩 순서대로 다 볼 수 있습니다.
   $("eventResultCloseBtn").addEventListener("click", () => {
     $("eventResultBackdrop").classList.add("hidden");
+    showNextQueuedResult();
   });
   $("eventResultBackdrop").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) $("eventResultCloseBtn").click();
-  });
-  // 통행료 결과 팝업 닫기(확인 버튼 / 바깥 클릭) — 위 이벤트 결과 팝업과 동일한 패턴
-  $("tollResultCloseBtn").addEventListener("click", () => {
-    $("tollResultBackdrop").classList.add("hidden");
-  });
-  $("tollResultBackdrop").addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) $("tollResultCloseBtn").click();
   });
   $("startGameBtn").addEventListener("click", async () => {
     $("startMsg").classList.add("hidden");
