@@ -512,7 +512,11 @@ function startEvent(state, playerId, tile, now) {
     if (delta >= 0) p.cash += delta;
     else chargePlayer(state, playerId, -delta, now);
     state.log.push(`${p.name}: 복불복 윷판 결과 "${label}" ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}원`);
-    state.lastEventResult = { type: "yut", label, delta, atLogLen: state.log.length };
+    // playerId를 함께 남겨두는 이유: state.lastEventResult는 방 전체에 하나뿐인 값이라, 이걸
+    // 누구 화면에 팝업으로 보여줘야 하는지 참가자 화면(player.html)에서 정확히 구분하기
+    // 위해서입니다(실제로 있었던 버그: 이게 없으면 BOT이나 다른 참가자 턴에 생긴 결과가,
+    // 그 이후 내 턴이 됐을 때 마치 내 결과인 것처럼 뒤늦게 잘못 표시될 수 있었습니다).
+    state.lastEventResult = { type: "yut", label, delta, atLogLen: state.log.length, playerId };
     state.turnPhase = "awaiting-endturn";
   }
 }
@@ -529,19 +533,21 @@ function applyEventChoice(state, playerId, choice, now) {
     state.log.push(`${p.name}: 복주머니 카드 결과 ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}`);
     // 요청: "모든 이벤트 결과는 윷놀이 결과와 동일한 방식으로 팝업으로 안내" (수입/지출
     // 이벤트 한정) — 복주머니도 현금 증감이 있는 이벤트이므로 yut/relative와 같은
-    // lastEventResult 패턴을 따릅니다.
-    state.lastEventResult = { type: "market", amount: delta, atLogLen: state.log.length };
+    // lastEventResult 패턴을 따릅니다. playerId를 남겨두는 이유는 위 rollYut 쪽 주석 참고
+    // (누구 화면에 보여줘야 할 결과인지 구분하기 위함 — BOT/다른 참가자 결과가 내 턴에
+    // 뒤늦게 잘못 뜨는 걸 막는 용도).
+    state.lastEventResult = { type: "market", amount: delta, atLogLen: state.log.length, playerId };
   } else if (ev.type === "relative") {
     if (choice === "perform") {
       const bonus = 5000 + Math.floor(Math.random() * 6) * 1000;
       p.cash += bonus;
       state.log.push(`${p.name}: 친척집 미션 성공! +${bonus.toLocaleString()}원`);
-      state.lastEventResult = { type: "relative", outcome: "success", amount: bonus, atLogLen: state.log.length };
+      state.lastEventResult = { type: "relative", outcome: "success", amount: bonus, atLogLen: state.log.length, playerId };
     } else {
       // 패스하면 어떤 경우에도 돈을 받지 못합니다(사용자 확정 사항) — 기존에도 그랬지만,
       // 참가자 화면에서 "0원"임이 분명히 보이도록 로그·결과 배너 문구를 명확히 함.
       state.log.push(`${p.name}: 친척집 미션 패스 (획득 금액 없음)`);
-      state.lastEventResult = { type: "relative", outcome: "pass", amount: 0, atLogLen: state.log.length };
+      state.lastEventResult = { type: "relative", outcome: "pass", amount: 0, atLogLen: state.log.length, playerId };
     }
   } else if (ev.type === "shop") {
     const item = ["toll-free", "reroll", "half-build"].includes(choice) ? choice : null;
@@ -551,10 +557,10 @@ function applyEventChoice(state, playerId, choice, now) {
       state.log.push(`${p.name}: 달토끼 상점에서 ${itemLabel(item)} 구매`);
       // 아이템 구매는 15,000원 지출 이벤트이므로 다른 수입/지출 이벤트와 동일하게
       // lastEventResult를 남겨 참가자 화면에 팝업으로 안내합니다.
-      state.lastEventResult = { type: "shop", outcome: "bought", item, amount: -15000, atLogLen: state.log.length };
+      state.lastEventResult = { type: "shop", outcome: "bought", item, amount: -15000, atLogLen: state.log.length, playerId };
     } else {
       state.log.push(`${p.name}: 달토끼 상점 패스`);
-      state.lastEventResult = { type: "shop", outcome: "pass", item: null, amount: 0, atLogLen: state.log.length };
+      state.lastEventResult = { type: "shop", outcome: "pass", item: null, amount: 0, atLogLen: state.log.length, playerId };
     }
   }
   state.pendingEvent = null;
