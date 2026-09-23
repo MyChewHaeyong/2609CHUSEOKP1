@@ -832,25 +832,38 @@ app.post("/api/rooms/:code/admin/donation-toggle", (req, res) => {
   res.json({ ok: true, stateVersion: newVersion, state: responseState, donationEnabled: enabled });
 });
 
-// 팔도마블 참가자 화면(player.html)의 BGM 켜짐/꺼짐·음량을 방 전체에 동일하게 적용하는
-// 관리자 설정. 게임 시작 전(waiting)부터도 미리 맞춰둘 수 있고(게임 시작 시 그대로 이어받음),
-// 게임 도중에 바꾸면 참가자 화면이 다음 폴링 때 바로 반영합니다(donation-toggle과 동일한
-// "방 전체 공유 설정, 서버 저장" 패턴). bgmOn/volume 중 보낸 값만 바뀌고 나머지는 유지됩니다.
+// 팔도마블 참가자 화면(player.html)의 BGM 켜짐/꺼짐·음량, 효과음 음량을 방 전체에 동일하게
+// 적용하는 관리자 설정. 게임 시작 전(waiting)부터도 미리 맞춰둘 수 있고(게임 시작 시 그대로
+// 이어받음), 게임 도중에 바꾸면 참가자 화면이 다음 폴링 때 바로 반영합니다(donation-toggle과
+// 동일한 "방 전체 공유 설정, 서버 저장" 패턴). BGM 켜짐/꺼짐·음량과 효과음 음량은 서로 완전히
+// 독립적입니다(BGM을 꺼도 효과음엔 영향 없음). bgmOn/bgmVolume/sfxVolume 중 보낸 값만 바뀌고
+// 나머지는 그대로 유지됩니다(부분 업데이트).
 app.post("/api/rooms/:code/admin/audio-settings", (req, res) => {
   const room = getRoom(req.params.code);
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
   if (!requireAdmin(req, res, room)) return;
 
   const state = JSON.parse(room.state_json);
-  const prev = state.audioSettings && typeof state.audioSettings === "object" ? state.audioSettings : { bgmOn: true, volume: 0.6 };
-  const next = { bgmOn: prev.bgmOn, volume: prev.volume };
+  const prev =
+    state.audioSettings && typeof state.audioSettings === "object"
+      ? state.audioSettings
+      : { bgmOn: true, bgmVolume: 0, sfxVolume: 0.6 };
+  const next = { bgmOn: prev.bgmOn, bgmVolume: prev.bgmVolume, sfxVolume: prev.sfxVolume };
   if (req.body?.bgmOn !== undefined) next.bgmOn = !!req.body.bgmOn;
-  if (req.body?.volume !== undefined) next.volume = Game.clampVolume(req.body.volume);
+  if (req.body?.bgmVolume !== undefined) next.bgmVolume = Game.clampVolume(req.body.bgmVolume, 0);
+  if (req.body?.sfxVolume !== undefined) next.sfxVolume = Game.clampVolume(req.body.sfxVolume, 0.6);
   state.audioSettings = next;
   if (!Array.isArray(state.log)) state.log = [];
-  state.log.push(`[음향] BGM ${next.bgmOn ? "켜짐" : "꺼짐"} · 음량 ${Math.round(next.volume * 100)}%로 변경됨(관리자)`);
+  state.log.push(
+    `[음향] BGM ${next.bgmOn ? "켜짐" : "꺼짐"} · BGM 음량 ${Math.round(next.bgmVolume * 100)}% · 효과음 음량 ${Math.round(next.sfxVolume * 100)}%로 변경됨(관리자)`
+  );
   const status = room.game_mode === "auction" ? auctionStatusFor(state.phase) : room.status;
-  const newVersion = persistState(room, state, `음향 설정 변경(BGM ${next.bgmOn ? "켜짐" : "꺼짐"}, 음량 ${Math.round(next.volume * 100)}%)`, status);
+  const newVersion = persistState(
+    room,
+    state,
+    `음향 설정 변경(BGM ${next.bgmOn ? "켜짐" : "꺼짐"}, BGM ${Math.round(next.bgmVolume * 100)}%, 효과음 ${Math.round(next.sfxVolume * 100)}%)`,
+    status
+  );
   const responseState = room.game_mode === "auction" ? Game2.serializeForClient(state, { forAdmin: true }) : state;
   res.json({ ok: true, stateVersion: newVersion, state: responseState, audioSettings: next });
 });
