@@ -135,16 +135,18 @@ function initState(players, existingDonationEffects, existingDonationEnabled, ex
     // 음량을 조절할 수 있도록 방 상태에 함께 둡니다(사용자 확정: 방 전체 공유 설정, 서버 저장).
     // bgmVolume/sfxVolume은 0~1 사이 값(HTML5 Audio.volume과 동일한 범위)이며, BGM과 효과음은
     // 서로 완전히 독립된 설정입니다(BGM을 꺼도 효과음엔 영향 없음, 음량도 각자 따로 조절).
-    // 사용자 확정: 게임을 새로 시작할 때(관리자가 미리 맞춰두지 않았다면) BGM 음량은 기본 0으로
-    // 시작하고(직접 올려야 들림), 효과음 음량은 기존처럼 0.6으로 시작합니다.
+    // 사용자 확정: 효과음은 시작부터 켜진 상태(기본 음량 0.6)이고, BGM은 게임을 새로 시작할 때
+    // (관리자가 미리 맞춰두지 않았다면) 기본적으로 꺼진 상태(bgmOn=false)로 시작해서, 관리자가
+    // 원할 때 관리자 화면에서 켜는 방식입니다. bgmOn이 명시적으로 true인 경우에만 켜진
+    // 것으로 취급합니다(필드가 아예 없으면 꺼짐으로 안전하게 처리).
     audioSettings:
       existingAudioSettings && typeof existingAudioSettings === "object"
         ? {
-            bgmOn: existingAudioSettings.bgmOn !== false,
-            bgmVolume: clampVolume(existingAudioSettings.bgmVolume, 0),
+            bgmOn: existingAudioSettings.bgmOn === true,
+            bgmVolume: clampVolume(existingAudioSettings.bgmVolume, 0.6),
             sfxVolume: clampVolume(existingAudioSettings.sfxVolume, 0.6),
           }
-        : { bgmOn: true, bgmVolume: 0, sfxVolume: 0.6 },
+        : { bgmOn: false, bgmVolume: 0.6, sfxVolume: 0.6 },
   };
   players.forEach((p) => {
     st.players[p.id] = {
