@@ -239,8 +239,12 @@
      mp3와 wav 둘 다 지원합니다(변환 불필요) — <source>를 여러 개 두면 브라우저가 위에서부터
      순서대로 시도하다가 실제로 존재하는(404가 아닌) 첫 파일을 재생하므로, mp3든 wav든 파일
      이름만 맞으면(예: bgm.wav) 그대로 올려도 코드 수정 없이 바로 재생됩니다. 파일이 아직
-     하나도 없으면 브라우저가 조용히 무시할 뿐 에러로 화면에 영향을 주지 않습니다. -->
-<audio id="bgmAudio" loop preload="auto">
+     하나도 없으면 브라우저가 조용히 무시할 뿐 에러로 화면에 영향을 주지 않습니다.
+     bgmAudio에 muted 속성을 기본으로 걸어둔 이유: 아직 방에 입장도 안 해서 서버 음향
+     설정을 한 번도 못 받은 시점(이름 입력 화면 등)에 실수로 뭔가가 재생을 시도하더라도
+     안전하게 무음이도록 하는 이중 안전장치입니다 — 실제 음소거 해제는 아래 스크립트의
+     applyAudioSettings()가 서버 설정(BGM 켜짐 여부)을 받은 뒤에만 합니다. -->
+<audio id="bgmAudio" loop preload="auto" muted>
   <source src="/audio/bgm.mp3" type="audio/mpeg">
   <source src="/audio/bgm.wav" type="audio/wav">
 </audio>
@@ -407,19 +411,30 @@
   // 않음) "게임 종료까지 BGM 유지"가 되도록, 실제 재생 시작(.play())은 게임이 진행 중이 된
   // 이후 딱 한 번만 시도합니다 — 매번 새로 재생하면 audio.loop가 있어도 끊기고 다시 시작되는
   // 것처럼 들릴 수 있어서, 이미 재생 중이면 다시 건드리지 않습니다.
-  // 사용자 확정: BGM(켜짐/꺼짐·음량)과 효과음(음량)은 서로 완전히 독립적입니다 — BGM을 꺼도
-  // 효과음은 그대로 재생되고, 음량도 각자 따로 조절됩니다. 방을 새로 시작했는데 관리자가 아직
-  // 아무것도 설정하지 않았다면 BGM 음량은 기본 0(무음)으로, 효과음 음량은 기본 0.6으로
-  // 시작합니다(game.js의 initState 기본값과 동일 — 여기 기본값은 그 응답이 오기 전 아주 짧은
-  // 순간의 안전장치일 뿐입니다).
+  // 사용자 확정: 효과음은 시작부터 켜진 상태(기본 음량 0.6)이고, BGM은 시작 시 꺼진
+  // 상태(bgmOn=false)로 시작해서 관리자가 원할 때 켜는 방식입니다(game.js의 initState
+  // 기본값과 동일 — 여기 기본값은 그 응답이 오기 전 아주 짧은 순간의 안전장치일 뿐입니다).
+  // BGM(켜짐/꺼짐·음량)과 효과음(음량)은 서로 완전히 독립적입니다 — BGM을 꺼도 효과음은
+  // 그대로 재생되고, 음량도 각자 따로 조절됩니다.
   let bgmStarted = false;
+  // ★ 주의(실제로 있었던 문제): 아래 "자동재생 정책 보험" 클릭 리스너가 예전엔 상태를 전혀
+  // 안 보고 "화면 어디든 클릭하면 무조건 BGM 재생 시도"였는데, 그러면 참가자가 아직 방에
+  // 입장도 안 해서 서버로부터 음향 설정을 한 번도 못 받은 시점(이름 입력 화면 등)에 클릭만
+  // 해도 음소거/음량이 전혀 설정 안 된 <audio>가 브라우저 기본 음량(음소거 아님, 100%)으로
+  // 재생돼버리는 사고가 있었습니다. 그래서 지금은 "실제로 게임이 진행 중(playing)이고 방
+  // 설정상 BGM이 켜져 있는 상태"라는 걸 폴링으로 이미 확인했을 때만 이 클릭 재시도가
+  // 동작하도록, 마지막으로 알려진 상태를 별도로 기억해뒀다가 그것부터 확인합니다.
+  let lastKnownStatus = null;
+  let lastKnownBgmOn = false;
   function applyAudioSettings(state, status) {
-    const settings = (state && state.audioSettings) || { bgmOn: true, bgmVolume: 0, sfxVolume: 0.6 };
+    const settings = (state && state.audioSettings) || { bgmOn: false, bgmVolume: 0.6, sfxVolume: 0.6 };
     const bgmVol =
-      typeof settings.bgmVolume === "number" && isFinite(settings.bgmVolume) ? Math.max(0, Math.min(1, settings.bgmVolume)) : 0;
+      typeof settings.bgmVolume === "number" && isFinite(settings.bgmVolume) ? Math.max(0, Math.min(1, settings.bgmVolume)) : 0.6;
     const sfxVol =
       typeof settings.sfxVolume === "number" && isFinite(settings.sfxVolume) ? Math.max(0, Math.min(1, settings.sfxVolume)) : 0.6;
-    const bgmOn = settings.bgmOn !== false;
+    const bgmOn = settings.bgmOn === true; // 기본값이 "꺼짐"이므로 명시적으로 true일 때만 켜진 것으로 취급
+    lastKnownStatus = status;
+    lastKnownBgmOn = bgmOn;
     const bgm = $("bgmAudio");
     const sfxIncome = $("sfxIncomeAudio");
     const sfxExpense = $("sfxExpenseAudio");
@@ -436,15 +451,23 @@
     if (status === "playing" && !bgmStarted) {
       // 브라우저 자동재생 정책상 사용자 조작(클릭 등) 이전엔 실패할 수 있는데, 그럴 땐 조용히
       // 무시하고 다음 폴링(1초 뒤)에 다시 시도합니다 — 참가자가 아무 버튼이나 한 번 누르고 나면
-      // 성공합니다(입장/게임 시작 버튼 클릭 자체가 이미 그 조작임).
+      // 성공합니다(입장/게임 시작 버튼 클릭 자체가 이미 그 조작임). BGM이 꺼진 상태(muted)로도
+      // 미리 재생을 걸어둬야, 나중에 관리자가 켰을 때 다시 play()를 호출하지 않고 음소거만
+      // 풀어도 바로 소리가 나면서 재생 위치도 끊기지 않습니다.
       bgm.play().then(() => { bgmStarted = true; }).catch(() => {});
     }
   }
-  // 자동재생 정책 보험: 화면 어디를 클릭하든 한 번은 BGM 재생을 시도합니다(중복 호출돼도
-  // 이미 재생 중이면 브라우저가 알아서 아무 일도 안 함).
+  // 자동재생 정책 보험: 게임이 실제로 진행 중이고(playing) BGM이 켜져 있는 상태라는 걸 이미
+  // 폴링으로 확인했을 때만, 화면 클릭을 계기로 BGM 재생을 한 번 더 시도합니다(중복 호출돼도
+  // 이미 재생 중이면 브라우저가 알아서 아무 일도 안 함). 위 설명대로, 아직 아무 상태도 모르는
+  // 입장 화면 등에서는 이 리스너가 아무것도 하지 않습니다.
   document.addEventListener(
     "click",
-    () => { const b = $("bgmAudio"); if (b && b.paused) b.play().then(() => { bgmStarted = true; }).catch(() => {}); },
+    () => {
+      if (lastKnownStatus !== "playing" || !lastKnownBgmOn) return;
+      const b = $("bgmAudio");
+      if (b && b.paused) b.play().then(() => { bgmStarted = true; }).catch(() => {});
+    },
     { capture: true }
   );
   let busy = false; // 액션 처리 중 중복 클릭 방지
