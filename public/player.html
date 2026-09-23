@@ -1541,6 +1541,14 @@
       $("actionMsg").classList.remove("hidden");
     } finally {
       busy = false;
+      // poll() 안에서 renderActionPanel이 이미 한 번 호출됐지만, 그때는 busy가 아직 true라서
+      // 액션 버튼/이벤트 결과 팝업 갱신이 건너뛰어집니다(dice 애니메이션 도중에 버튼이 먼저
+      // 바뀌거나 팝업이 애니메이션과 겹쳐 뜨는 걸 막기 위한 의도된 동작). 문제는 그 다음
+      // 갱신이 배경 1초 폴링(setInterval(poll, 1000))에 맡겨진다는 점이라, busy가 풀린
+      // 시점과 다음 폴링 사이(최대 1초, 평균 약 0.5초)만큼 버튼도 이벤트 결과 팝업도 뒤늦게
+      // 나타나는 지연이 있었습니다. 그래서 busy를 false로 바꾼 직후 같은 최신 상태로 한 번 더
+      // 즉시 다시 그려서, 다음 폴링을 기다리지 않고 바로 반영되게 합니다.
+      if (lastBoardState) renderActionPanel(lastBoardState);
     }
   }
 
@@ -1560,6 +1568,9 @@
       $("actionMsg").classList.remove("hidden");
     } finally {
       busy = false;
+      // rollDiceWithAnimation의 동일한 finally 블록 참고 — busy가 풀리자마자 최신 상태로
+      // 한 번 더 즉시 다시 그려서 다음 배경 폴링(최대 1초)을 기다리지 않게 합니다.
+      if (lastBoardState) renderActionPanel(lastBoardState);
     }
   }
 
