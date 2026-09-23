@@ -84,6 +84,22 @@
     <div id="startMsg" class="msg"></div>
   </div>
 
+  <!-- 1부 팔도마블 전용: BGM/효과음. 참가자 화면(player.html)에 실시간으로 반영되는 방 전체
+       공유 설정입니다(대기 중일 때부터 미리 맞춰둬도 되고, 게임 시작 후에도 언제든 바꿀 수
+       있습니다). 실제 음원 파일은 public/audio/bgm.mp3 · sfx-income.mp3 · sfx-expense.mp3로
+       올려두면 자동 적용됩니다. -->
+  <div class="panel hidden" id="audioPanel">
+    <h2>BGM/효과음 <span class="tag">1부 팔도마블</span></h2>
+    <p class="hint">참가자 화면(player.html)에서 재생되는 배경음악과 수입/지출 효과음의 켜짐·꺼짐, 음량을 방 전체에 동일하게 적용합니다. 바꾸면 각 참가자 화면에 다음 폴링(약 1초 이내)에 반영됩니다.</p>
+    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:8px">
+      <input id="bgmOnToggle" type="checkbox" style="width:auto; margin:0" />
+      <span style="color:var(--cream)">BGM 켜짐</span>
+    </label>
+    <label for="bgmVolumeRange">음량 (<span id="bgmVolumeLabel">60</span>%)</label>
+    <input id="bgmVolumeRange" type="range" min="0" max="100" step="5" value="60" style="width:100%" />
+    <div id="audioSettingsMsg" class="msg"></div>
+  </div>
+
   <!-- 2부 차례상 경매 전용: 경매/투표 진행 관리 -->
   <div class="panel hidden" id="auctionPanel">
     <h2>경매 진행 관리 <span class="tag">2부 차례상 경매</span></h2>
@@ -380,6 +396,7 @@
     $("startPanel").classList.toggle("hidden", !isP1);
     $("forceEndPanel").classList.toggle("hidden", !isP1);
     $("movePanel").classList.toggle("hidden", !isP1);
+    $("audioPanel").classList.toggle("hidden", !isP1);
     $("auctionPanel").classList.toggle("hidden", !isP2);
     $("emergencyHint").textContent = isP2
       ? '2부 예시 — 행동 타입 bid + 데이터 {"amount":70000} · 행동 타입 pass + 데이터 {}'
@@ -407,6 +424,18 @@
       const deMap = data.room.state.donationEffects || {};
       data.players.filter((p) => !p.isBot).forEach((p) => renderDonationSummaryFor(p.id, deMap[p.id]));
       renderSoopStatusesFor(data.players, data.soopStatuses);
+
+      // BGM/효과음: 1부 전용. 슬라이더를 드래그하는 중에는 서버 값으로 덮어써서 손이 튀지
+      // 않도록, 지금 포커스가 그 슬라이더에 가 있지 않을 때만 값을 다시 그립니다.
+      if (currentGameMode === "paldomarble") {
+        const audioSettings = data.room.state.audioSettings || { bgmOn: true, volume: 0.6 };
+        $("bgmOnToggle").checked = audioSettings.bgmOn !== false;
+        if (document.activeElement !== $("bgmVolumeRange")) {
+          const pct = Math.round((typeof audioSettings.volume === "number" ? audioSettings.volume : 0.6) * 100);
+          $("bgmVolumeRange").value = String(pct);
+          $("bgmVolumeLabel").textContent = String(pct);
+        }
+      }
 
       if (currentGameMode === "auction") {
         await refreshAuction(code, key, data.players);
@@ -759,6 +788,43 @@
       $("donationToggleMsg").textContent = "변경 실패: " + e.message;
       $("donationToggleMsg").classList.add("err");
     }
+  });
+
+  // --- 1부 팔도마블: BGM/효과음 ---
+  async function sendAudioSettings(payload, revert) {
+    const { code, key } = creds();
+    if (!code || !key) {
+      revert();
+      $("audioSettingsMsg").textContent = "먼저 방을 불러와주세요.";
+      $("audioSettingsMsg").classList.add("err");
+      return;
+    }
+    try {
+      await api("/api/rooms/" + code + "/admin/audio-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey: key, ...payload }),
+      });
+      $("audioSettingsMsg").textContent = "적용됐습니다.";
+      $("audioSettingsMsg").classList.remove("err");
+      refresh();
+    } catch (e) {
+      revert();
+      $("audioSettingsMsg").textContent = "변경 실패: " + e.message;
+      $("audioSettingsMsg").classList.add("err");
+    }
+  }
+  $("bgmOnToggle").addEventListener("change", () => {
+    const on = $("bgmOnToggle").checked;
+    sendAudioSettings({ bgmOn: on }, () => { $("bgmOnToggle").checked = !on; });
+  });
+  // 드래그 중엔 실시간으로 숫자 라벨만 바꾸고(잦은 요청 방지), 손을 뗀 시점(change)에 한 번만 전송.
+  $("bgmVolumeRange").addEventListener("input", () => {
+    $("bgmVolumeLabel").textContent = $("bgmVolumeRange").value;
+  });
+  $("bgmVolumeRange").addEventListener("change", () => {
+    const pct = Number($("bgmVolumeRange").value);
+    sendAudioSettings({ volume: pct / 100 }, () => {});
   });
 
   // --- 2부 차례상 경매: 경매/투표 진행 관리 ---
