@@ -593,6 +593,23 @@ function resolveToll(state, playerId, useItem, now) {
       `${p.name} → ${owner ? owner.name : "?"} 통행료 ${paid.toLocaleString()}` +
         (paid < amount ? " (자금 부족으로 파산)" : "")
     );
+    // 사용자 요청: "통행료 수입과 통행료 지출도 팝업에 반영". 통행료는 지불하는 사람(지출)과
+    // 땅주인(수입) 두 사람에게 동시에 영향을 주는 이벤트라, 위 lastEventResult(항상 "지금
+    // 내 턴인 사람"의 결과 하나만 다루도록 만들어진 필드)와는 별도로 lastTollResult에
+    // payerId/ownerId를 모두 남깁니다 — 땅주인은 자기 턴이 아닐 때(남이 내 땅을 밟았을 때)
+    // 통행료를 받으므로, 참가자 화면(player.html)이 이 둘 중 자기 id와 맞는 쪽을 각자
+    // 판단해서 지불한 사람에게는 지출로, 땅주인에게는 수입으로 따로 보여줍니다.
+    if (owner && paid > 0) {
+      state.lastTollResult = {
+        payerId: playerId,
+        payerName: p.name,
+        ownerId: pending.ownerId,
+        ownerName: owner.name,
+        amount: paid,
+        bankrupt: paid < amount,
+        atLogLen: state.log.length,
+      };
+    }
   }
   // 통행료를 내다가 파산했다면 턴을 마무리할 사람이 없으므로 곧바로 다음 사람에게 넘김
   if (p.bankrupt) {
