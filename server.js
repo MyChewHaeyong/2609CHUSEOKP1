@@ -847,10 +847,10 @@ app.post("/api/rooms/:code/admin/audio-settings", (req, res) => {
   const prev =
     state.audioSettings && typeof state.audioSettings === "object"
       ? state.audioSettings
-      : { bgmOn: true, bgmVolume: 0, sfxVolume: 0.6 };
+      : { bgmOn: false, bgmVolume: 0.6, sfxVolume: 0.6 };
   const next = { bgmOn: prev.bgmOn, bgmVolume: prev.bgmVolume, sfxVolume: prev.sfxVolume };
   if (req.body?.bgmOn !== undefined) next.bgmOn = !!req.body.bgmOn;
-  if (req.body?.bgmVolume !== undefined) next.bgmVolume = Game.clampVolume(req.body.bgmVolume, 0);
+  if (req.body?.bgmVolume !== undefined) next.bgmVolume = Game.clampVolume(req.body.bgmVolume, 0.6);
   if (req.body?.sfxVolume !== undefined) next.sfxVolume = Game.clampVolume(req.body.sfxVolume, 0.6);
   state.audioSettings = next;
   if (!Array.isArray(state.log)) state.log = [];
