@@ -407,18 +407,26 @@
   // 않음) "게임 종료까지 BGM 유지"가 되도록, 실제 재생 시작(.play())은 게임이 진행 중이 된
   // 이후 딱 한 번만 시도합니다 — 매번 새로 재생하면 audio.loop가 있어도 끊기고 다시 시작되는
   // 것처럼 들릴 수 있어서, 이미 재생 중이면 다시 건드리지 않습니다.
+  // 사용자 확정: BGM(켜짐/꺼짐·음량)과 효과음(음량)은 서로 완전히 독립적입니다 — BGM을 꺼도
+  // 효과음은 그대로 재생되고, 음량도 각자 따로 조절됩니다. 방을 새로 시작했는데 관리자가 아직
+  // 아무것도 설정하지 않았다면 BGM 음량은 기본 0(무음)으로, 효과음 음량은 기본 0.6으로
+  // 시작합니다(game.js의 initState 기본값과 동일 — 여기 기본값은 그 응답이 오기 전 아주 짧은
+  // 순간의 안전장치일 뿐입니다).
   let bgmStarted = false;
   function applyAudioSettings(state, status) {
-    const settings = (state && state.audioSettings) || { bgmOn: true, volume: 0.6 };
-    const vol = typeof settings.volume === "number" && isFinite(settings.volume) ? Math.max(0, Math.min(1, settings.volume)) : 0.6;
+    const settings = (state && state.audioSettings) || { bgmOn: true, bgmVolume: 0, sfxVolume: 0.6 };
+    const bgmVol =
+      typeof settings.bgmVolume === "number" && isFinite(settings.bgmVolume) ? Math.max(0, Math.min(1, settings.bgmVolume)) : 0;
+    const sfxVol =
+      typeof settings.sfxVolume === "number" && isFinite(settings.sfxVolume) ? Math.max(0, Math.min(1, settings.sfxVolume)) : 0.6;
     const bgmOn = settings.bgmOn !== false;
     const bgm = $("bgmAudio");
     const sfxIncome = $("sfxIncomeAudio");
     const sfxExpense = $("sfxExpenseAudio");
-    if (sfxIncome) sfxIncome.volume = vol;
-    if (sfxExpense) sfxExpense.volume = vol;
+    if (sfxIncome) sfxIncome.volume = sfxVol;
+    if (sfxExpense) sfxExpense.volume = sfxVol;
     if (!bgm) return;
-    bgm.volume = vol;
+    bgm.volume = bgmVol;
     bgm.muted = !bgmOn;
     if (status === "ended") {
       bgm.pause();
