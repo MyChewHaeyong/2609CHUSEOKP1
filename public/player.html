@@ -235,11 +235,23 @@
 <!-- BGM/효과음: 관리자 화면에서 방 전체 공유 설정(켜짐/꺼짐·음량)을 조절하면 이 화면이
      폴링 때마다 그 값을 그대로 반영합니다(아래 applyAudioSettings 참고). 실제 음원 파일은
      public/audio/ 폴더에 정확히 이 이름으로 올려두면 코드 수정 없이 바로 적용됩니다:
-     bgm.mp3(배경음악, 반복 재생) · sfx-income.mp3(수입 발생 시) · sfx-expense.mp3(지출 발생 시).
-     파일이 아직 없으면 브라우저가 조용히 무시할 뿐 에러로 화면에 영향을 주지 않습니다. -->
-<audio id="bgmAudio" src="/audio/bgm.mp3" loop preload="auto"></audio>
-<audio id="sfxIncomeAudio" src="/audio/sfx-income.mp3" preload="auto"></audio>
-<audio id="sfxExpenseAudio" src="/audio/sfx-expense.mp3" preload="auto"></audio>
+     bgm(배경음악, 반복 재생) · sfx-income(수입 발생 시) · sfx-expense(지출 발생 시).
+     mp3와 wav 둘 다 지원합니다(변환 불필요) — <source>를 여러 개 두면 브라우저가 위에서부터
+     순서대로 시도하다가 실제로 존재하는(404가 아닌) 첫 파일을 재생하므로, mp3든 wav든 파일
+     이름만 맞으면(예: bgm.wav) 그대로 올려도 코드 수정 없이 바로 재생됩니다. 파일이 아직
+     하나도 없으면 브라우저가 조용히 무시할 뿐 에러로 화면에 영향을 주지 않습니다. -->
+<audio id="bgmAudio" loop preload="auto">
+  <source src="/audio/bgm.mp3" type="audio/mpeg">
+  <source src="/audio/bgm.wav" type="audio/wav">
+</audio>
+<audio id="sfxIncomeAudio" preload="auto">
+  <source src="/audio/sfx-income.mp3" type="audio/mpeg">
+  <source src="/audio/sfx-income.wav" type="audio/wav">
+</audio>
+<audio id="sfxExpenseAudio" preload="auto">
+  <source src="/audio/sfx-expense.mp3" type="audio/mpeg">
+  <source src="/audio/sfx-expense.wav" type="audio/wav">
+</audio>
 <div class="wrap">
   <h1>팔도마블</h1>
   <p class="sub">한가위 팔도 유람마블 · 참가자 화면</p>
