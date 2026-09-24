@@ -106,18 +106,27 @@ const CHARACTER_IDS = [1, 2, 3, 4];
 function touchPlayer(playerId) {
   db.prepare("UPDATE players SET last_seen = ? WHERE id = ?").run(now(), playerId);
 }
+// ★ 서버 딜레이 원인 수정: 이 함수는 액션 하나(주사위/구매/건설 등)마다 매번 호출되는데,
+// better-sqlite3는 완전히 동기(synchronous) 방식이라 이 함수가 끝날 때까지 Node.js 서버
+// 전체가 다른 모든 요청(다른 참가자들의 화면 갱신 포함)을 하나도 처리하지 못하고 멈춥니다.
+// 예전 방식은 "이 방의 스냅샷 id를 전부 SELECT로 긁어와서, 앱(JS) 쪽에서 30개를 넘는 것만
+// 골라 하나씩 개별 DELETE"했는데, 방송이 몇 시간씩 이어지며 DB 파일 자체가 커질수록(다른
+// 테이블 포함, 디스크 I/O가 가끔 느려짐) 이 SELECT+반복 DELETE 구간이 눈에 띄게 오래
+// 걸리는 경우가 실제로 있었고, 그동안 서버 전체가 멈춰서 모든 참가자 화면이 함께 지연되는
+// 사고로 이어졌습니다(2026-09-24 새벽 HSLN 방, 한 번의 건설 액션이 약 52초 걸린 사례로
+// 확인). 아래처럼 "이 방에서 최신 30개를 제외한 나머지를 지워라"를 SQL 하나로 DB 엔진에
+// 맡기면(room_code+id 인덱스를 그대로 활용), 앱-DB 왕복이나 JS 반복문 없이 훨씬 가볍게
+// 끝나서 이런 블로킹이 줄어듭니다.
 function saveSnapshot(roomCode, stateVersion, stateJson, label) {
   db.prepare(
     "INSERT INTO snapshots (room_code, state_version, state_json, label, created_at) VALUES (?, ?, ?, ?, ?)"
   ).run(roomCode, stateVersion, stateJson, label || null, now());
   // 최근 30개만 보관 (그 이전 것은 정리)
-  const rows = db.prepare("SELECT id FROM snapshots WHERE room_code = ? ORDER BY id DESC").all(roomCode);
-  if (rows.length > 30) {
-    const toDelete = rows.slice(30).map((r) => r.id);
-    const del = db.prepare("DELETE FROM snapshots WHERE id = ?");
-    const tx = db.transaction((ids) => ids.forEach((id) => del.run(id)));
-    tx(toDelete);
-  }
+  db.prepare(
+    `DELETE FROM snapshots WHERE room_code = ? AND id NOT IN (
+       SELECT id FROM snapshots WHERE room_code = ? ORDER BY id DESC LIMIT 30
+     )`
+  ).run(roomCode, roomCode);
 }
 function publicPlayer(p) {
   return {
@@ -835,39 +844,25 @@ app.post("/api/rooms/:code/admin/donation-toggle", (req, res) => {
   res.json({ ok: true, stateVersion: newVersion, state: responseState, donationEnabled: enabled });
 });
 
-// 팔도마블 참가자 화면(player.html)의 BGM 켜짐/꺼짐·음량, 효과음 음량을 방 전체에 동일하게
-// 적용하는 관리자 설정. 게임 시작 전(waiting)부터도 미리 맞춰둘 수 있고(게임 시작 시 그대로
-// 이어받음), 게임 도중에 바꾸면 참가자 화면이 다음 폴링 때 바로 반영합니다(donation-toggle과
-// 동일한 "방 전체 공유 설정, 서버 저장" 패턴). BGM 켜짐/꺼짐·음량과 효과음 음량은 서로 완전히
-// 독립적입니다(BGM을 꺼도 효과음엔 영향 없음). bgmOn/bgmVolume/sfxVolume 중 보낸 값만 바뀌고
-// 나머지는 그대로 유지됩니다(부분 업데이트).
+// 팔도마블 참가자 화면(player.html)의 효과음 음량을 방 전체에 동일하게 적용하는 관리자
+// 설정. 게임 시작 전(waiting)부터도 미리 맞춰둘 수 있고(게임 시작 시 그대로 이어받음), 게임
+// 도중에 바꾸면 참가자 화면이 다음 폴링 때 바로 반영합니다(donation-toggle과 동일한 "방 전체
+// 공유 설정, 서버 저장" 패턴). (BGM 기능은 사용자 요청으로 완전히 제거했습니다 — 효과음만
+// 남습니다.)
 app.post("/api/rooms/:code/admin/audio-settings", (req, res) => {
   const room = getRoom(req.params.code);
   if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
   if (!requireAdmin(req, res, room)) return;
 
   const state = JSON.parse(room.state_json);
-  const prev =
-    state.audioSettings && typeof state.audioSettings === "object"
-      ? state.audioSettings
-      : { bgmOn: false, bgmVolume: 0.6, sfxVolume: 0.6 };
-  const next = { bgmOn: prev.bgmOn, bgmVolume: prev.bgmVolume, sfxVolume: prev.sfxVolume };
-  if (req.body?.bgmOn !== undefined) next.bgmOn = !!req.body.bgmOn;
-  if (req.body?.bgmVolume !== undefined) next.bgmVolume = Game.clampVolume(req.body.bgmVolume, 0.6);
+  const prev = state.audioSettings && typeof state.audioSettings === "object" ? state.audioSettings : { sfxVolume: 0.6 };
+  const next = { sfxVolume: prev.sfxVolume };
   if (req.body?.sfxVolume !== undefined) next.sfxVolume = Game.clampVolume(req.body.sfxVolume, 0.6);
   state.audioSettings = next;
   // 위 donation-toggle과 동일한 이유로 Game.pushLog를 씁니다.
-  Game.pushLog(
-    state,
-    `[음향] BGM ${next.bgmOn ? "켜짐" : "꺼짐"} · BGM 음량 ${Math.round(next.bgmVolume * 100)}% · 효과음 음량 ${Math.round(next.sfxVolume * 100)}%로 변경됨(관리자)`
-  );
+  Game.pushLog(state, `[음향] 효과음 음량 ${Math.round(next.sfxVolume * 100)}%로 변경됨(관리자)`);
   const status = room.game_mode === "auction" ? auctionStatusFor(state.phase) : room.status;
-  const newVersion = persistState(
-    room,
-    state,
-    `음향 설정 변경(BGM ${next.bgmOn ? "켜짐" : "꺼짐"}, BGM ${Math.round(next.bgmVolume * 100)}%, 효과음 ${Math.round(next.sfxVolume * 100)}%)`,
-    status
-  );
+  const newVersion = persistState(room, state, `음향 설정 변경(효과음 ${Math.round(next.sfxVolume * 100)}%)`, status);
   const responseState = room.game_mode === "auction" ? Game2.serializeForClient(state, { forAdmin: true }) : state;
   res.json({ ok: true, stateVersion: newVersion, state: responseState, audioSettings: next });
 });
