@@ -72,7 +72,37 @@ const TILES = [
   { pos: 20, name: "서울", type: "city", region: "sd", price: 130000 },
 ];
 
-const MISSIONS = ["애교 대사 한마디 하기", "좋아하는 노래 한 소절 부르기(10초)", "사투리로 인사말 하기"];
+// 친척집 미션 3종. 각 미션은 이름(mission)과 "후보 대사" 목록(lines)을 갖습니다 — 칸에
+// 도착하면 미션을 랜덤으로 하나 고르고, 대사가 있는 미션(사투리 따라하기/애교 미션)은 그중
+// 대사도 하나 랜덤으로 골라 참가자 화면에 함께 보여줍니다(무엇을 어떻게 수행해야 하는지
+// 바로 알 수 있도록). 노래10초 미션은 정해진 대사가 없으므로 lines를 비워둡니다 — 참가자가
+// 부르고 싶은 노래를 자유롭게 10초 이상 부르면 됩니다(player.html의 renderEventArea 참고).
+const MISSION_TYPES = [
+  {
+    name: "사투리 따라하기",
+    lines: [
+      "가가 가라고? 아이다. 가가 가가 아니고 가가 가다.",
+      "니 내 누군지 아나? 돈 받으러 왔는데 뭐 그거까지 알아야 되니?",
+      "느그 서장 남천동 살제? 내가 임마, 느그 서장이랑 밥도 묵고! 사우나도 같이 가고!",
+      "와, 이거 맛꿀마. 맛이 아주 깔끼하네예. 이거는 인정해뿌야 됩니다.",
+      "니 지금 왜 그러는데? 너 와카는데? 와칸다 포에버",
+    ],
+  },
+  {
+    name: "애교 미션",
+    lines: [
+      "야 라고 해도 돼? 내꺼라고 해도 돼? 우리둘만 아는 애칭이 필요해. 으른양 으른양. 그러니까 오늘부터 내꺼해.",
+      "있지… 쓰다듬어줘 안돼…? 그럼 안아줘 그것도 안돼..? 그럼 뽀뽀해줘.. 그것도? 해줘! 해줘! ..그냥 내가 하지 뭐 쪽~♡♡",
+      "옵빠! 나 띠드버거 먹고띠퍼요! 띠드버거~~ 아 빨리 띠드버거~~",
+      "변신 귀엽 뽁짝 애교와 귀여움으로 펼쳐진 (본인이름)! (팬덤닉)들의 지갑을 사로잡아버리겠어 하트 발쌰 뿅♥뿅♥",
+      "나는 고미니이따 싯빵이에 누었는데 너무 푹씨내서 이러날슈가 업따 오또카지",
+    ],
+  },
+  {
+    name: "노래10초 미션",
+    lines: [],
+  },
+];
 
 function assertCurrentTurn(state, playerId) {
   if (state.phase !== "playing") throw new Error("게임이 진행 중이 아닙니다.");
@@ -94,7 +124,6 @@ function donationRate(state, playerId) {
 }
 
 // 0~1 사이로 안전하게 자름(숫자가 아니거나 범위를 벗어나면 fallback값, 기본 0.6).
-// BGM 음량 기본값(0)과 효과음 음량 기본값(0.6)이 서로 달라서 fallback을 인자로 받습니다.
 function clampVolume(v, fallback) {
   const fb = typeof fallback === "number" && Number.isFinite(fallback) ? fallback : 0.6;
   const n = Number(v);
@@ -158,8 +187,8 @@ function pushResultLog(state, entry) {
 // 집계해뒀다면(수동 +1 버튼/SOOP 자동감지를 게임 시작 전부터 켜둔 경우) 그 값을 이어받기
 // 위한 선택 인자입니다({ [playerId]: donationEffect상태 } 형태). 넘기지 않으면 빈 맵으로 시작.
 // existingDonationEnabled: 방 전체 후원 효과 켜짐/꺼짐 스위치(기본 true).
-// existingAudioSettings: 게임 시작 전(waiting)부터 관리자가 BGM 켜짐/꺼짐·음량을 미리
-// 맞춰뒀을 수 있으므로, 있으면 그대로 이어받습니다(donationEffects와 동일한 패턴).
+// existingAudioSettings: 게임 시작 전(waiting)부터 관리자가 효과음 음량을 미리 맞춰뒀을 수
+// 있으므로, 있으면 그대로 이어받습니다(donationEffects와 동일한 패턴).
 function initState(players, existingDonationEffects, existingDonationEnabled, existingAudioSettings) {
   const st = {
     phase: "playing",
@@ -187,22 +216,14 @@ function initState(players, existingDonationEffects, existingDonationEnabled, ex
     properties: {},
     donationEffects: existingDonationEffects || {},
     donationEnabled: existingDonationEnabled !== false,
-    // 참가자 화면(player.html)의 BGM/효과음을 관리자 화면에서 방 전체에 동일하게 켜고/끄고
-    // 음량을 조절할 수 있도록 방 상태에 함께 둡니다(사용자 확정: 방 전체 공유 설정, 서버 저장).
-    // bgmVolume/sfxVolume은 0~1 사이 값(HTML5 Audio.volume과 동일한 범위)이며, BGM과 효과음은
-    // 서로 완전히 독립된 설정입니다(BGM을 꺼도 효과음엔 영향 없음, 음량도 각자 따로 조절).
-    // 사용자 확정: 효과음은 시작부터 켜진 상태(기본 음량 0.6)이고, BGM은 게임을 새로 시작할 때
-    // (관리자가 미리 맞춰두지 않았다면) 기본적으로 꺼진 상태(bgmOn=false)로 시작해서, 관리자가
-    // 원할 때 관리자 화면에서 켜는 방식입니다. bgmOn이 명시적으로 true인 경우에만 켜진
-    // 것으로 취급합니다(필드가 아예 없으면 꺼짐으로 안전하게 처리).
+    // 참가자 화면(player.html)의 효과음을 관리자 화면에서 방 전체에 동일하게 음량 조절할 수
+    // 있도록 방 상태에 함께 둡니다(사용자 확정: 방 전체 공유 설정, 서버 저장). sfxVolume은
+    // 0~1 사이 값(HTML5 Audio.volume과 동일한 범위)이며, 효과음은 시작부터 켜진 상태(기본
+    // 음량 0.6)입니다. (BGM 기능은 사용자 요청으로 완전히 제거했습니다.)
     audioSettings:
       existingAudioSettings && typeof existingAudioSettings === "object"
-        ? {
-            bgmOn: existingAudioSettings.bgmOn === true,
-            bgmVolume: clampVolume(existingAudioSettings.bgmVolume, 0.6),
-            sfxVolume: clampVolume(existingAudioSettings.sfxVolume, 0.6),
-          }
-        : { bgmOn: false, bgmVolume: 0.6, sfxVolume: 0.6 },
+        ? { sfxVolume: clampVolume(existingAudioSettings.sfxVolume, 0.6) }
+        : { sfxVolume: 0.6 },
   };
   players.forEach((p) => {
     st.players[p.id] = {
@@ -549,7 +570,13 @@ function startEvent(state, playerId, tile, now) {
     state.pendingEvent = { type: "market", cards: generateMarketCards() };
     state.turnPhase = "awaiting-event";
   } else if (tile.eventType === "relative") {
-    state.pendingEvent = { type: "relative", mission: MISSIONS[Math.floor(Math.random() * MISSIONS.length)] };
+    // 미션을 랜덤으로 고르고, 그 미션에 후보 대사가 있으면(사투리 따라하기/애교 미션) 그중
+    // 하나도 함께 랜덤으로 골라 mission(미션 이름)과 missionLine(수행할 대사)으로 각각
+    // 내려줍니다 — 노래10초 미션은 후보 대사가 없으므로 missionLine은 null입니다
+    // (player.html의 renderEventArea가 null이면 "직접 노래를 불러달라"는 안내만 보여줌).
+    const mt = MISSION_TYPES[Math.floor(Math.random() * MISSION_TYPES.length)];
+    const missionLine = mt.lines.length ? mt.lines[Math.floor(Math.random() * mt.lines.length)] : null;
+    state.pendingEvent = { type: "relative", mission: mt.name, missionLine };
     state.turnPhase = "awaiting-event";
   } else if (tile.eventType === "shop") {
     state.pendingEvent = { type: "shop" };
