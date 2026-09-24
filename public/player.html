@@ -232,22 +232,14 @@
 </style>
 </head>
 <body>
-<!-- BGM/효과음: 관리자 화면에서 방 전체 공유 설정(켜짐/꺼짐·음량)을 조절하면 이 화면이
-     폴링 때마다 그 값을 그대로 반영합니다(아래 applyAudioSettings 참고). 실제 음원 파일은
-     public/audio/ 폴더에 정확히 이 이름으로 올려두면 코드 수정 없이 바로 적용됩니다:
-     bgm(배경음악, 반복 재생) · sfx-income(수입 발생 시) · sfx-expense(지출 발생 시).
-     mp3와 wav 둘 다 지원합니다(변환 불필요) — <source>를 여러 개 두면 브라우저가 위에서부터
-     순서대로 시도하다가 실제로 존재하는(404가 아닌) 첫 파일을 재생하므로, mp3든 wav든 파일
-     이름만 맞으면(예: bgm.wav) 그대로 올려도 코드 수정 없이 바로 재생됩니다. 파일이 아직
-     하나도 없으면 브라우저가 조용히 무시할 뿐 에러로 화면에 영향을 주지 않습니다.
-     bgmAudio에 muted 속성을 기본으로 걸어둔 이유: 아직 방에 입장도 안 해서 서버 음향
-     설정을 한 번도 못 받은 시점(이름 입력 화면 등)에 실수로 뭔가가 재생을 시도하더라도
-     안전하게 무음이도록 하는 이중 안전장치입니다 — 실제 음소거 해제는 아래 스크립트의
-     applyAudioSettings()가 서버 설정(BGM 켜짐 여부)을 받은 뒤에만 합니다. -->
-<audio id="bgmAudio" loop preload="auto" muted>
-  <source src="/audio/bgm.mp3" type="audio/mpeg">
-  <source src="/audio/bgm.wav" type="audio/wav">
-</audio>
+<!-- 효과음: 관리자 화면에서 방 전체 공유 설정(음량)을 조절하면 이 화면이 폴링 때마다 그
+     값을 그대로 반영합니다(아래 applyAudioSettings 참고). 실제 음원 파일은 public/audio/
+     폴더에 정확히 이 이름으로 올려두면 코드 수정 없이 바로 적용됩니다: sfx-income(수입 발생
+     시) · sfx-expense(지출 발생 시). mp3와 wav 둘 다 지원합니다(변환 불필요) — <source>를
+     여러 개 두면 브라우저가 위에서부터 순서대로 시도하다가 실제로 존재하는(404가 아닌) 첫
+     파일을 재생하므로, mp3든 wav든 파일 이름만 맞으면(예: sfx-income.wav) 그대로 올려도
+     코드 수정 없이 바로 재생됩니다. 파일이 아직 하나도 없으면 브라우저가 조용히 무시할 뿐
+     에러로 화면에 영향을 주지 않습니다. (사용자 요청: BGM은 제거하고 효과음만 유지) -->
 <audio id="sfxIncomeAudio" preload="auto">
   <source src="/audio/sfx-income.mp3" type="audio/mpeg">
   <source src="/audio/sfx-income.wav" type="audio/wav">
@@ -421,70 +413,19 @@
   // 쌓이는 일 자체가 구조적으로 불가능해집니다.
   let pollInFlight = false;
 
-  // --- BGM/효과음: 관리자 화면(admin.html)이 방 상태(state.audioSettings)에 저장한
-  // 켜짐/꺼짐·음량을 폴링 때마다 그대로 반영합니다. 음량/음소거만 바꾸고(재생 위치는 건드리지
-  // 않음) "게임 종료까지 BGM 유지"가 되도록, 실제 재생 시작(.play())은 게임이 진행 중이 된
-  // 이후 딱 한 번만 시도합니다 — 매번 새로 재생하면 audio.loop가 있어도 끊기고 다시 시작되는
-  // 것처럼 들릴 수 있어서, 이미 재생 중이면 다시 건드리지 않습니다.
-  // 사용자 확정: 효과음은 시작부터 켜진 상태(기본 음량 0.6)이고, BGM은 시작 시 꺼진
-  // 상태(bgmOn=false)로 시작해서 관리자가 원할 때 켜는 방식입니다(game.js의 initState
-  // 기본값과 동일 — 여기 기본값은 그 응답이 오기 전 아주 짧은 순간의 안전장치일 뿐입니다).
-  // BGM(켜짐/꺼짐·음량)과 효과음(음량)은 서로 완전히 독립적입니다 — BGM을 꺼도 효과음은
-  // 그대로 재생되고, 음량도 각자 따로 조절됩니다.
-  let bgmStarted = false;
-  // ★ 주의(실제로 있었던 문제): 아래 "자동재생 정책 보험" 클릭 리스너가 예전엔 상태를 전혀
-  // 안 보고 "화면 어디든 클릭하면 무조건 BGM 재생 시도"였는데, 그러면 참가자가 아직 방에
-  // 입장도 안 해서 서버로부터 음향 설정을 한 번도 못 받은 시점(이름 입력 화면 등)에 클릭만
-  // 해도 음소거/음량이 전혀 설정 안 된 <audio>가 브라우저 기본 음량(음소거 아님, 100%)으로
-  // 재생돼버리는 사고가 있었습니다. 그래서 지금은 "실제로 게임이 진행 중(playing)이고 방
-  // 설정상 BGM이 켜져 있는 상태"라는 걸 폴링으로 이미 확인했을 때만 이 클릭 재시도가
-  // 동작하도록, 마지막으로 알려진 상태를 별도로 기억해뒀다가 그것부터 확인합니다.
-  let lastKnownStatus = null;
-  let lastKnownBgmOn = false;
+  // --- 효과음: 관리자 화면(admin.html)이 방 상태(state.audioSettings)에 저장한 음량을
+  // 폴링 때마다 그대로 반영합니다. 효과음은 시작부터 켜진 상태(기본 음량 0.6)입니다
+  // (game.js의 initState 기본값과 동일 — 여기 기본값은 그 응답이 오기 전 아주 짧은 순간의
+  // 안전장치일 뿐입니다). BGM은 사용자 요청으로 완전히 제거했습니다(효과음만 유지).
   function applyAudioSettings(state, status) {
-    const settings = (state && state.audioSettings) || { bgmOn: false, bgmVolume: 0.6, sfxVolume: 0.6 };
-    const bgmVol =
-      typeof settings.bgmVolume === "number" && isFinite(settings.bgmVolume) ? Math.max(0, Math.min(1, settings.bgmVolume)) : 0.6;
+    const settings = (state && state.audioSettings) || { sfxVolume: 0.6 };
     const sfxVol =
       typeof settings.sfxVolume === "number" && isFinite(settings.sfxVolume) ? Math.max(0, Math.min(1, settings.sfxVolume)) : 0.6;
-    const bgmOn = settings.bgmOn === true; // 기본값이 "꺼짐"이므로 명시적으로 true일 때만 켜진 것으로 취급
-    lastKnownStatus = status;
-    lastKnownBgmOn = bgmOn;
-    const bgm = $("bgmAudio");
     const sfxIncome = $("sfxIncomeAudio");
     const sfxExpense = $("sfxExpenseAudio");
     if (sfxIncome) sfxIncome.volume = sfxVol;
     if (sfxExpense) sfxExpense.volume = sfxVol;
-    if (!bgm) return;
-    bgm.volume = bgmVol;
-    bgm.muted = !bgmOn;
-    if (status === "ended") {
-      bgm.pause();
-      bgmStarted = false; // 혹시 재입장 등으로 다시 playing이 되면 그때 다시 시작하도록
-      return;
-    }
-    if (status === "playing" && !bgmStarted) {
-      // 브라우저 자동재생 정책상 사용자 조작(클릭 등) 이전엔 실패할 수 있는데, 그럴 땐 조용히
-      // 무시하고 다음 폴링(1초 뒤)에 다시 시도합니다 — 참가자가 아무 버튼이나 한 번 누르고 나면
-      // 성공합니다(입장/게임 시작 버튼 클릭 자체가 이미 그 조작임). BGM이 꺼진 상태(muted)로도
-      // 미리 재생을 걸어둬야, 나중에 관리자가 켰을 때 다시 play()를 호출하지 않고 음소거만
-      // 풀어도 바로 소리가 나면서 재생 위치도 끊기지 않습니다.
-      bgm.play().then(() => { bgmStarted = true; }).catch(() => {});
-    }
   }
-  // 자동재생 정책 보험: 게임이 실제로 진행 중이고(playing) BGM이 켜져 있는 상태라는 걸 이미
-  // 폴링으로 확인했을 때만, 화면 클릭을 계기로 BGM 재생을 한 번 더 시도합니다(중복 호출돼도
-  // 이미 재생 중이면 브라우저가 알아서 아무 일도 안 함). 위 설명대로, 아직 아무 상태도 모르는
-  // 입장 화면 등에서는 이 리스너가 아무것도 하지 않습니다.
-  document.addEventListener(
-    "click",
-    () => {
-      if (lastKnownStatus !== "playing" || !lastKnownBgmOn) return;
-      const b = $("bgmAudio");
-      if (b && b.paused) b.play().then(() => { bgmStarted = true; }).catch(() => {});
-    },
-    { capture: true }
-  );
   let busy = false; // 액션 처리 중 중복 클릭 방지
   let lastHumanCount = 1;
 
@@ -1044,9 +985,20 @@
       });
       wrap.appendChild(row);
     } else if (ev.type === "relative") {
+      // 미션 이름(ev.mission)과, 대사가 있는 미션(사투리 따라하기/애교 미션)이면 서버가 함께
+      // 골라준 후보 대사(ev.missionLine)를 큰 글씨의 말풍선 형태로 보여줍니다 — 참가자가 이
+      // 카드만 보고 바로 무엇을 수행해야 하는지 알 수 있도록(요청: "랜덤으로 배정된 미션과
+      // 그에 맞는 후보 대사 팝업 출력"). 노래10초 미션처럼 정해진 대사가 없으면(missionLine이
+      // null) 안내 문구만 보여줍니다.
       const card = document.createElement("div");
       card.className = "tilecard";
-      card.innerHTML = '<div class="tname">친척집 미션</div><div class="tinfo">' + ev.mission + '</div>';
+      card.innerHTML =
+        '<div class="tname">친척집 미션: ' + ev.mission + "</div>" +
+        (ev.missionLine
+          ? '<div class="tinfo" style="margin-top:10px; padding:12px 14px; background:#1a1733; border-radius:10px; font-size:16px; line-height:1.55; color:#fff">"' +
+            ev.missionLine +
+            '"</div>'
+          : '<div class="tinfo" style="margin-top:10px">부르고 싶은 노래를 자유롭게 10초 이상 불러주세요.</div>');
       wrap.appendChild(card);
       const row = document.createElement("div");
       row.className = "btnrow";
@@ -1086,6 +1038,12 @@
   }
 
   let lastMyPropsKey = null;
+  // 건설 버튼을 눌러도 바로 지어지지 않고, 일단 "무엇을 지을지 선택"만 해두었다가 별도의
+  // "건설하기" 버튼을 눌러야 실제로 확정되도록 하는 대기 상태입니다(요청: "실수로 구매하는
+  // 것 방지"). { tilePos, level("villa"/"hotel"), useItem(반값권 사용 여부), cost, label }
+  // 형태이며, 한 번에 하나만 선택할 수 있습니다(다른 칸/다른 항목을 새로 고르면 이전 선택은
+  // 자동으로 사라짐). 확정하거나 취소하면 다시 null로 돌아갑니다.
+  let pendingBuild = null;
   function renderMyProps(state) {
     const panel = $("myPropsPanel");
     // 내가 땅을 하나라도 갖고 있으면 내 차례가 아니어도 항상 목록을 볼 수 있게 합니다
@@ -1096,7 +1054,15 @@
       .map(Number)
       .filter((pos) => state.properties[pos].ownerId === session.playerId);
     panel.classList.toggle("hidden", myPositions.length === 0);
-    if (myPositions.length === 0) { lastMyPropsKey = null; return; }
+    if (myPositions.length === 0) { lastMyPropsKey = null; pendingBuild = null; return; }
+
+    // 선택해둔 건설 대기 항목이 더 이상 유효하지 않으면(내 턴이 끝났거나, 그 땅을 팔았거나,
+    // 다른 경로로 이미 지어진 경우 등) 자동으로 취소합니다.
+    if (pendingBuild) {
+      const prop2 = state.properties[pendingBuild.tilePos];
+      const stillValid = canAct && myPositions.includes(pendingBuild.tilePos) && prop2 && !prop2[pendingBuild.level];
+      if (!stillValid) pendingBuild = null;
+    }
 
     const me = state.players[session.playerId];
     const hasHalfBuild = !!(me && me.items && me.items.includes("half-build"));
@@ -1106,8 +1072,9 @@
     const cashNow = me ? me.cash : 0;
     const myPosNow = me ? me.position : null;
     // 건설 가능 여부가 지금 내가 서 있는 칸(myPosNow)에도 좌우되므로(요청: "내 차례에 해당
-    // 도시의 칸에 있어야만 건설 가능") 이것도 신호에 포함합니다.
-    const key = canAct + "|" + hasHalfBuild + "|" + cashNow + "|" + myPosNow + "|" + myPositions.map((pos) => pos + ":" + JSON.stringify(state.properties[pos])).join(",");
+    // 도시의 칸에 있어야만 건설 가능") 이것도 신호에 포함합니다. 건설 확정 대기 상태
+    // (pendingBuild)가 바뀌어도 다시 그려야 확인/취소 버튼이 즉시 나타나므로 신호에 포함합니다.
+    const key = canAct + "|" + hasHalfBuild + "|" + cashNow + "|" + myPosNow + "|" + JSON.stringify(pendingBuild) + "|" + myPositions.map((pos) => pos + ":" + JSON.stringify(state.properties[pos])).join(",");
     if (key === lastMyPropsKey) return;
     lastMyPropsKey = key;
 
@@ -1135,19 +1102,56 @@
         // 해서, 나중에 그 칸에 다시 오면 얼마가 필요한지 미리 볼 수 있게 둡니다.
         const notHere = me2 && me2.position !== pos;
         const hereReason = "지금 이 칸에 있어야 건설할 수 있습니다";
-        if (!prop.villa) {
-          row.appendChild(makeSmallBtn("별장 건설 (" + fmt(villaBuildCost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa" }), false, notHere ? hereReason : cash < villaBuildCost));
-          if (hasHalfBuild) {
+        // 건설 버튼은 눌러도 바로 짓지 않고 "이 항목을 선택"만 합니다(pendingBuild에 저장) —
+        // 실제 건설(sendAction)은 아래 확인 영역의 "건설하기" 버튼을 눌러야 일어납니다(요청:
+        // "실수로 구매하는 것 방지"). 이미 이 칸에서 뭔가 선택된 상태라면, 선택된 그 항목은
+        // 버튼 대신 아래 확인 영역에 나타나므로 여기서는 건너뜁니다(중복 표시 방지).
+        const pendingHere = pendingBuild && pendingBuild.tilePos === pos;
+        const isPendingOption = (level, useItem) => pendingHere && pendingBuild.level === level && !!pendingBuild.useItem === !!useItem;
+        const selectBuild = (level, useItem, cost, label) => {
+          pendingBuild = { tilePos: pos, level, useItem: !!useItem, cost, label };
+          lastMyPropsKey = null;
+          renderMyProps(lastBoardState || state);
+        };
+        if (!prop.villa && !isPendingOption("villa", false)) {
+          row.appendChild(makeSmallBtn("별장 건설 (" + fmt(villaBuildCost) + "원)", () => selectBuild("villa", false, villaBuildCost, "별장 건설"), false, notHere ? hereReason : cash < villaBuildCost));
+          if (hasHalfBuild && !isPendingOption("villa", true)) {
             const halfCost = Math.round(villaBuildCost * 0.5);
-            row.appendChild(makeSmallBtn("별장 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "villa", useItem: true }), true, notHere ? hereReason : cash < halfCost));
+            row.appendChild(makeSmallBtn("별장 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => selectBuild("villa", true, halfCost, "별장 건설(반값권 사용)"), true, notHere ? hereReason : cash < halfCost));
           }
         }
-        if (!prop.hotel) {
-          row.appendChild(makeSmallBtn("호텔 건설 (" + fmt(hotelBuildCost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel" }), false, notHere ? hereReason : cash < hotelBuildCost));
-          if (hasHalfBuild) {
+        if (!prop.hotel && !isPendingOption("hotel", false)) {
+          row.appendChild(makeSmallBtn("호텔 건설 (" + fmt(hotelBuildCost) + "원)", () => selectBuild("hotel", false, hotelBuildCost, "호텔 건설"), false, notHere ? hereReason : cash < hotelBuildCost));
+          if (hasHalfBuild && !isPendingOption("hotel", true)) {
             const halfCost = Math.round(hotelBuildCost * 0.5);
-            row.appendChild(makeSmallBtn("호텔 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => sendAction("build", { tilePos: pos, level: "hotel", useItem: true }), true, notHere ? hereReason : cash < halfCost));
+            row.appendChild(makeSmallBtn("호텔 건설 (반값권 사용, " + fmt(halfCost) + "원)", () => selectBuild("hotel", true, halfCost, "호텔 건설(반값권 사용)"), true, notHere ? hereReason : cash < halfCost));
           }
+        }
+        if (pendingHere) {
+          // 선택된 항목의 확인/취소 영역 — "건설하기"를 눌러야 비로소 서버에 실제 건설
+          // 요청(sendAction)이 전송됩니다.
+          const confirmBox = document.createElement("div");
+          confirmBox.style.cssText =
+            "flex-basis:100%; margin-top:6px; padding:10px 12px; background:#1a1733; border-radius:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap";
+          const msg = document.createElement("span");
+          msg.style.cssText = "color:#fff; font-size:14px";
+          msg.textContent = pendingBuild.label + " — " + fmt(pendingBuild.cost) + "원, 맞나요?";
+          confirmBox.appendChild(msg);
+          confirmBox.appendChild(
+            makeSmallBtn("건설하기", () => {
+              const b = pendingBuild;
+              pendingBuild = null;
+              sendAction("build", { tilePos: b.tilePos, level: b.level, useItem: b.useItem });
+            })
+          );
+          confirmBox.appendChild(
+            makeSmallBtn("취소", () => {
+              pendingBuild = null;
+              lastMyPropsKey = null;
+              renderMyProps(lastBoardState || state);
+            }, true)
+          );
+          row.appendChild(confirmBox);
         }
         // 매각도 단계별로 순서대로 내려가지 않고, 별장/호텔/땅 중 원하는 것만 골라 매각합니다
         // (요청: "원하는 만큼만 매각 가능"). 땅은 건물이 남아있지 않을 때만 매각할 수 있습니다.
