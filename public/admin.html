@@ -112,7 +112,11 @@
         <option value="4" selected>4명</option>
       </select>
       <div id="auctionBotNamesArea"></div>
-      <label style="margin-top:6px">1부 방 코드로 등수 자동 연결 (선택)</label>
+
+      <div id="auctionSeedArea" style="margin-top:10px"></div>
+      <p class="hint" style="margin:2px 0 10px">비워두면 기본 시작 자금(110만원)이 적용됩니다. 아래 1부 방 코드 미리보기를 누르면 등수에 맞는 금액이 참고용으로 채워지며, 그 값도 직접 수정할 수 있습니다.</p>
+
+      <label style="margin-top:6px">1부 방 코드로 등수 미리보기 (선택, 참고용)</label>
       <input id="auctionPart1Code" placeholder="예: B3Q9" style="text-transform:uppercase" />
       <button id="auctionPreviewBtn" class="secondary">미리보기</button>
       <div id="auctionPreviewMsg" class="msg"></div>
@@ -467,9 +471,12 @@
 
     if (data.status === "waiting") {
       renderAuctionBotNameInputs(players.filter((p) => !p.isBot).length);
+      renderAuctionSeedInputs(players.filter((p) => !p.isBot));
     } else {
       $("auctionBotNamesArea").innerHTML = "";
       renderedAuctionBotsNeeded = -1;
+      $("auctionSeedArea").innerHTML = "";
+      renderedAuctionSeedPlayerIds = null;
     }
 
     ["auctionStartBox", "auctionBiddingBox", "auctionRoundResultBox", "auctionTableReviewBox", "auctionVotingBox", "auctionEndedBox"]
@@ -546,6 +553,52 @@
       input.addEventListener("input", () => { botNameDrafts[i] = input.value; });
       area.appendChild(input);
     }
+  }
+
+  // 2부 참가자별 시작 자금 직접 입력. 1부→2부 이름 자동 매칭이 실패하면 기본값(110만원)으로
+  // 조용히 떨어지는 문제가 있어서, 관리자가 방송 중 화면에서 바로 숫자를 확인/수정할 수 있도록
+  // 별도 입력칸을 둡니다. 여기 입력한 값은 서버로 seedOverrides로 전달되어 실제 시작 캐시를
+  // 결정하며, 1부 코드 자동 매칭(ranks)보다 항상 우선합니다.
+  const RANK_SEED_PREVIEW = { 1: 1250000, 2: 1100000, 3: 950000, 4: 800000 };
+  let auctionSeedDrafts = {}; // playerId -> 입력칸에 타이핑된 문자열
+  let renderedAuctionSeedPlayerIds = null;
+  function renderAuctionSeedInputs(humanPlayers) {
+    const ids = humanPlayers.map((p) => p.id).join(",");
+    if (ids === renderedAuctionSeedPlayerIds) return;
+    renderedAuctionSeedPlayerIds = ids;
+    const area = $("auctionSeedArea");
+    area.innerHTML = "";
+    if (humanPlayers.length === 0) return;
+    const label = document.createElement("label");
+    label.textContent = "참가자별 시작 자금 직접 입력 (원 단위)";
+    area.appendChild(label);
+    humanPlayers.forEach((p) => {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.gap = "8px";
+      const span = document.createElement("span");
+      span.style.minWidth = "84px";
+      span.style.fontSize = "13px";
+      span.style.flexShrink = "0";
+      span.textContent = p.name;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.inputMode = "numeric";
+      input.pattern = "[0-9]*";
+      input.placeholder = "예: 1250000 (비우면 기본 110만원)";
+      input.style.marginBottom = "8px";
+      input.value = auctionSeedDrafts[p.id] || "";
+      input.dataset.seedPlayer = p.id;
+      input.addEventListener("input", () => {
+        const cleaned = input.value.replace(/[^0-9]/g, "");
+        if (cleaned !== input.value) input.value = cleaned;
+        auctionSeedDrafts[p.id] = input.value;
+      });
+      row.appendChild(span);
+      row.appendChild(input);
+      area.appendChild(row);
+    });
   }
 
   // 2부용 BOT 이름 입력(위와 동일한 포커스 유지 로직, 별도 상태로 분리)
@@ -837,8 +890,17 @@
       );
       let msg = "매칭됨: " + data.matched.map((m) => m.name + "(" + m.rank + "등)").join(", ");
       if (data.unmatched.length) msg += " · 매칭 안 됨(기본 시드머니 적용): " + data.unmatched.join(", ");
+      msg += " · 아래 시작 자금 입력칸에 참고용으로 채워넣었습니다. 다르면 직접 고치세요.";
       $("auctionPreviewMsg").textContent = msg;
       $("auctionPreviewMsg").classList.remove("err");
+      // 매칭된 등수에 해당하는 금액을 참고용으로 입력칸에 채워줍니다(그대로 써도 되고 고쳐도 됨).
+      data.matched.forEach((m) => {
+        const seed = RANK_SEED_PREVIEW[m.rank];
+        if (seed == null) return;
+        auctionSeedDrafts[m.playerId] = String(seed);
+        const input = document.querySelector('[data-seed-player="' + m.playerId + '"]');
+        if (input) input.value = String(seed);
+      });
     } catch (e) {
       $("auctionPreviewMsg").textContent = "미리보기 실패: " + e.message;
       $("auctionPreviewMsg").classList.add("err");
@@ -848,7 +910,17 @@
   $("auctionStartBtn").addEventListener("click", async () => {
     const { code, key } = creds();
     try {
-      const body = { adminKey: key, totalPlayers: Number($("auctionTotalPlayers").value), botNames: auctionBotNameDrafts };
+      const seedOverrides = {};
+      Object.keys(auctionSeedDrafts).forEach((pid) => {
+        const v = Number(auctionSeedDrafts[pid]);
+        if (auctionSeedDrafts[pid] && v > 0) seedOverrides[pid] = v;
+      });
+      const body = {
+        adminKey: key,
+        totalPlayers: Number($("auctionTotalPlayers").value),
+        botNames: auctionBotNameDrafts,
+        seedOverrides,
+      };
       const p1 = $("auctionPart1Code").value.trim().toUpperCase();
       if (p1) body.fromPart1RoomCode = p1;
       const data = await api("/api/rooms/" + code + "/admin/start-auction", {
