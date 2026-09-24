@@ -365,6 +365,11 @@
           <thead><tr><th>순위</th><th>이름</th><th>순자산</th><th>송편</th><th>경품</th></tr></thead>
           <tbody id="rankBody"></tbody>
         </table>
+        <!-- 관리자가 2부(차례상 경매) 방을 연결해둔 경우에만 보이는 버튼(요청: "1부 결과
+             팝업에서 그대로 2부 넘어갈 수 있는 링크"). 새 창으로 열리며, 방 코드·내 이름·내
+             캐릭터가 URL 파라미터로 미리 채워져서 banquet-player.html이 그대로 이어받아
+             입력해둡니다(renderRanking/goToPart2 참고). -->
+        <button id="goToPart2Btn" class="hidden" style="margin-bottom:8px">🍢 2부(차례상 경매)로 이동</button>
         <button id="rankModalCloseBtn" class="secondary rank-modal-close">닫기</button>
       </div>
     </div>
@@ -1329,7 +1334,13 @@
     }
     backdrop.classList.toggle("hidden", rankModalDismissed);
     $("rankReopenBtn").classList.toggle("hidden", !rankModalDismissed);
-    const key = state.finalRanking.map((r) => r.playerId + ":" + r.rank + ":" + r.netWorth + ":" + (r.songpyeon || 0)).join(",");
+    // "2부로 이동" 버튼은 관리자가 admin.html에서 2부 방 코드를 연결해둔 경우에만 보입니다.
+    // 종료 팝업이 이미 떠 있는 도중에 관리자가 나중에 연결할 수도 있으므로, 이 값도 다시
+    // 그릴지 판단하는 key에 포함해서 연결되는 즉시(다음 폴링 때) 버튼이 나타나게 합니다.
+    $("goToPart2Btn").classList.toggle("hidden", !state.linkedAuctionRoomCode);
+    const key =
+      state.finalRanking.map((r) => r.playerId + ":" + r.rank + ":" + r.netWorth + ":" + (r.songpyeon || 0)).join(",") +
+      "|" + (state.linkedAuctionRoomCode || "");
     if (key === lastRankingKey) return;
     lastRankingKey = key;
     const body = $("rankBody");
@@ -1773,6 +1784,24 @@
     rankModalDismissed = false;
     $("rankModalBackdrop").classList.remove("hidden");
     $("rankReopenBtn").classList.add("hidden");
+  });
+  // 2부로 이동: 연결된 2부 방 코드 + 내 이름 + 내 캐릭터를 URL 파라미터로 실어서
+  // banquet-player.html을 새 창으로 엽니다(요청: "1부 방의 코드와 각자의 이름, 캐릭터가
+  // 자동으로 입력 및 선택되도록"). 이름을 1부와 정확히 똑같이 맞춰야 2부 관리자가 1부 방
+  // 코드로 등수를 연결할 때(이름으로 대조) 오차 없이 매칭되므로, 자동으로 채워주는 게 오타
+  // 방지에도 도움이 됩니다. lastBoardState는 매 폴링마다 renderBoard에서 최신 state로
+  // 갱신해두는 값이라 클릭 시점의 최신 정보를 그대로 씁니다.
+  $("goToPart2Btn").addEventListener("click", () => {
+    const st = lastBoardState;
+    const code = st && st.linkedAuctionRoomCode;
+    if (!code) return;
+    const me = st.players && st.players[session.playerId];
+    const params = new URLSearchParams({ room: code });
+    if (me) {
+      params.set("name", me.name || "");
+      if (me.characterId != null) params.set("characterId", String(me.characterId));
+    }
+    window.open("/banquet-player.html?" + params.toString(), "_blank");
   });
   // 카드 바깥(어두운 배경) 클릭 시에도 같은 방식으로 닫힘
   $("rankModalBackdrop").addEventListener("click", (e) => {
