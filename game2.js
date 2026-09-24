@@ -85,14 +85,19 @@ function donationSummaryForPlayer(state, playerId, forAdmin) {
 // existingDonationEffects: 경매 시작 전(waiting) 상태에서 참가자별로 이미 집계된 후원 효과가
 // 있으면 이어받기 위한 선택 인자({ [playerId]: donationEffect상태 } 형태, 없으면 빈 맵).
 // existingDonationEnabled: 방 전체 후원 효과 켜짐/꺼짐 스위치(기본 true).
-function initState(players, ranks, part1Assets, now, existingDonationEffects, existingDonationEnabled) {
+// seedOverrides: { [playerId]: number } (선택) — 관리자가 직접 입력한 시작 자금. 1부→2부
+// 이름 자동 매칭(ranks)이 실패해 기본값으로 조용히 떨어지는 문제를 막기 위해, 값이 있으면
+// ranks/SEED_BY_RANK보다 항상 우선해서 그 금액을 그대로 시작 캐시로 씁니다.
+function initState(players, ranks, part1Assets, now, existingDonationEffects, existingDonationEnabled, seedOverrides) {
   if (!players || players.length < 1) throw new Error("참가자가 최소 1명 이상 있어야 합니다.");
   if (players.length > 4) throw new Error("참가자는 최대 4명까지입니다.");
 
   const statePlayers = {};
   players.forEach((p) => {
+    const override = seedOverrides && Number(seedOverrides[p.id]);
     const rank = ranks && ranks[p.id];
-    const seed = rank && SEED_BY_RANK[rank] != null ? SEED_BY_RANK[rank] : SEED_DEFAULT;
+    const seed =
+      override && override > 0 ? override : rank && SEED_BY_RANK[rank] != null ? SEED_BY_RANK[rank] : SEED_DEFAULT;
     statePlayers[p.id] = {
       id: p.id,
       name: p.name,
