@@ -158,22 +158,6 @@
     <div id="forceEndMsg" class="msg"></div>
   </div>
 
-  <!-- 1부 팔도마블 전용: 2부로 이동 링크 연결. 1부와 2부는 서로 다른 방(코드도 별도)이라
-       여기서 2부 방 코드를 한 번 연결해두면, 그 뒤로 모든 1부 참가자의 최종 순위 팝업에
-       "2부로 이동" 버튼이 자동으로 나타납니다(누르면 그 참가자의 이름·캐릭터가 미리 채워진
-       채로 2부 참가 화면이 새 창으로 열림). 보통 2부 방을 먼저 만들어서 코드를 받은 뒤 여기
-       입력합니다. -->
-  <div class="panel hidden" id="auctionLinkPanel">
-    <h2>2부로 이동 링크 <span class="tag">1부 팔도마블</span></h2>
-    <p class="hint">2부(차례상 경매) 방을 먼저 만든 뒤, 그 방 코드를 여기 연결해두면 1부 참가자들의 최종 순위 팝업에 "2부로 이동" 버튼이 자동으로 나타납니다. 버튼을 누르면 참가자 이름·캐릭터가 미리 채워진 채로 2부 참가 화면이 새 창으로 열립니다.</p>
-    <div id="auctionLinkStatus" style="font-size:13px; color:var(--cream); margin-bottom:8px">연결 안 됨</div>
-    <label for="auctionLinkCodeInput">2부 방 코드</label>
-    <input id="auctionLinkCodeInput" type="text" maxlength="6" placeholder="예: A7K2" style="text-transform:uppercase" />
-    <button id="auctionLinkBtn">이 코드로 연결</button>
-    <button id="auctionUnlinkBtn" class="secondary" style="margin-top:8px">연결 해제</button>
-    <div id="auctionLinkMsg" class="msg"></div>
-  </div>
-
   <!-- 1부 팔도마블 전용: 특정 칸으로 강제 이동 -->
   <div class="panel hidden" id="movePanel">
     <h2>특정 칸으로 이동 <span class="tag">1부 팔도마블</span></h2>
@@ -408,7 +392,6 @@
     const isP2 = currentGameMode === "auction";
     $("startPanel").classList.toggle("hidden", !isP1);
     $("forceEndPanel").classList.toggle("hidden", !isP1);
-    $("auctionLinkPanel").classList.toggle("hidden", !isP1);
     $("movePanel").classList.toggle("hidden", !isP1);
     $("audioPanel").classList.toggle("hidden", !isP1);
     $("auctionPanel").classList.toggle("hidden", !isP2);
@@ -448,14 +431,6 @@
           const sfxPct = Math.round((typeof audioSettings.sfxVolume === "number" ? audioSettings.sfxVolume : 0.6) * 100);
           $("sfxVolumeRange").value = String(sfxPct);
           $("sfxVolumeLabel").textContent = String(sfxPct);
-        }
-
-        // 2부로 이동 링크: 드래그 중 손이 튀는 슬라이더와 달리 텍스트 입력이라, 지금 이
-        // 입력창에 포커스가 가 있지 않을 때만 서버 값으로 덮어씁니다(타이핑 중 덮어쓰기 방지).
-        const linkedCode = data.room.state.linkedAuctionRoomCode || null;
-        $("auctionLinkStatus").textContent = linkedCode ? "연결됨: " + linkedCode : "연결 안 됨";
-        if (document.activeElement !== $("auctionLinkCodeInput")) {
-          $("auctionLinkCodeInput").value = linkedCode || "";
         }
       }
 
@@ -698,32 +673,6 @@
       $("forceEndMsg").textContent = "강제 종료 실패: " + e.message;
       $("forceEndMsg").classList.add("err");
     }
-  });
-
-  async function linkAuctionRoom(code, key, auctionRoomCode) {
-    try {
-      await api("/api/rooms/" + code + "/admin/link-auction-room", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminKey: key, auctionRoomCode }),
-      });
-      $("auctionLinkMsg").textContent = auctionRoomCode ? "연결됐습니다." : "연결 해제됐습니다.";
-      $("auctionLinkMsg").classList.remove("err");
-      refresh();
-    } catch (e) {
-      $("auctionLinkMsg").textContent = "실패: " + e.message;
-      $("auctionLinkMsg").classList.add("err");
-    }
-  }
-  $("auctionLinkBtn").addEventListener("click", () => {
-    const { code, key } = creds();
-    const target = $("auctionLinkCodeInput").value.trim().toUpperCase();
-    if (!target) { $("auctionLinkMsg").textContent = "2부 방 코드를 입력해주세요."; $("auctionLinkMsg").classList.add("err"); return; }
-    linkAuctionRoom(code, key, target);
-  });
-  $("auctionUnlinkBtn").addEventListener("click", () => {
-    const { code, key } = creds();
-    linkAuctionRoom(code, key, "");
   });
 
   $("movePlayerBtn").addEventListener("click", async () => {
