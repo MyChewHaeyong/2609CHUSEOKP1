@@ -408,6 +408,18 @@
   let session = null; // { roomCode, playerId, token }
   let pollTimer = null;
   let myAdminKey = null;
+  // ★ 실제로 있었던 문제("약 1분가량 버튼이 먹통됨"): 예전에는 poll()이 직전 요청이 아직
+  // 끝났는지와 무관하게 1초마다 무조건 새로 서버에 요청을 쐈습니다. 평소엔 응답이 워낙
+  // 빨라서(수 ms) 문제가 안 됐지만, 어떤 이유로든(네트워크 순간 지연, 서버가 잠깐 느려짐 등)
+  // 응답이 1초보다 오래 걸리기 시작하면, 다음 폴링 틱이 그 위에 또 새 요청을 쌓고, 1초 후
+  // 또 쌓고 하는 식으로 계속 누적됐습니다. 서버는 요청을 한 번에 하나씩 순서대로 처리하는
+  // 구조라, 이렇게 쌓인 요청이 많아질수록 각 요청의 대기 시간이 점점 더 길어지고, 그 사이에
+  // 새 요청이 더 쌓이는 악순환(눈덩이)이 생겨서 실제로 요청 하나가 30~70초까지 걸리고
+  // 화면 전체가 한동안 먹통이 되는 사고가 있었습니다. pollInFlight 플래그로 "직전 폴링이
+  // 아직 안 끝났으면 이번 틱은 건너뛴다"를 보장해서, 한 화면이 서버에 동시에 띄워두는 상태
+  // 확인 요청은 항상 최대 1개로 고정합니다 — 응답이 아무리 늦어도 그 위에 요청이 계속
+  // 쌓이는 일 자체가 구조적으로 불가능해집니다.
+  let pollInFlight = false;
 
   // --- BGM/효과음: 관리자 화면(admin.html)이 방 상태(state.audioSettings)에 저장한
   // 켜짐/꺼짐·음량을 폴링 때마다 그대로 반영합니다. 음량/음소거만 바꾸고(재생 위치는 건드리지
@@ -675,14 +687,25 @@
   }
 
   async function poll() {
+    if (pollInFlight) return; // 직전 폴링이 아직 응답을 못 받았으면 이번 틱은 건너뜀(위 pollInFlight 주석 참고)
+    pollInFlight = true;
+    // 응답이 비정상적으로 오래 걸리는 상황(예: 서버 요청이 일시적으로 밀림)에서도 이 화면이
+    // "진행 중" 상태에 영영 멈춰버리지 않도록, 10초 넘게 응답이 없으면 스스로 포기하고 다음
+    // 폴링 틱에 새로 시도합니다.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
       const data = await api(
-        "/api/rooms/" + session.roomCode + "/state?playerId=" + session.playerId + "&token=" + session.token
+        "/api/rooms/" + session.roomCode + "/state?playerId=" + session.playerId + "&token=" + session.token,
+        { signal: controller.signal }
       );
       renderAll(data);
       $("pollLine").textContent = "마지막 동기화: " + new Date(data.serverTime).toLocaleTimeString("ko-KR");
     } catch (e) {
-      $("pollLine").textContent = "연결 확인 중... (" + e.message + ")";
+      $("pollLine").textContent = "연결 확인 중... (" + (e.name === "AbortError" ? "응답 지연, 재시도 예정" : e.message) + ")";
+    } finally {
+      clearTimeout(timeoutId);
+      pollInFlight = false;
     }
   }
 
@@ -1487,8 +1510,15 @@
   //       → resultLog는 배열이고 lastSeenResultLogLen 커서보다 뒤에 있는 항목을 전부
   //       큐에 담으므로, 하나도 빠짐없이 순서대로 보여줄 수 있습니다.
 
+  // amountCls는 금액 글자색(초록=win/빨강=lose) "표시용"이고, sfx는 재생할 효과음(수입/
+  // 지출) "재생용"입니다. 원래는 이 둘이 항상 같은 값이었는데(수입이면 초록+수입음, 지출이면
+  // 빨강+지출음), 사용자 요청("송편토큰 획득, 아이템 구매도 income 효과음 적용")으로 둘이
+  // 달라지는 경우가 생겼습니다 — 달토끼 상점 구매는 15,000원이 실제로 나가는 지출이라 금액은
+  // 그대로 빨간색 "-15,000원"으로 보여주되, "뭔가를 손에 넣었다"는 느낌을 주기 위해 효과음은
+  // 지출음이 아니라 수입음을 재생합니다. 송편 토큰 획득도 같은 이유로 수입음을 재생합니다
+  // (현금 변화가 없어 금액 표시 자체는 여전히 생략).
   function buildEventDisplay(evr) {
-    let title, icon, label, amountText, amountCls;
+    let title, icon, label, amountText, amountCls, sfx;
     if (evr.type === "yut") {
       title = "복불복 윷놀이 결과";
       const win = evr.delta >= 0;
@@ -1496,6 +1526,7 @@
       label = evr.label;
       amountText = (win ? "+" : "-") + fmt(Math.abs(evr.delta)) + "원";
       amountCls = win ? "win" : "lose";
+      sfx = win ? "income" : "expense";
     } else if (evr.type === "market") {
       title = "복주머니 카드 결과";
       const win = evr.amount >= 0;
@@ -1503,50 +1534,55 @@
       label = "";
       amountText = (win ? "+" : "-") + fmt(Math.abs(evr.amount)) + "원";
       amountCls = win ? "win" : "lose";
+      sfx = win ? "income" : "expense";
     } else if (evr.type === "relative") {
       title = "친척집 미션 결과";
       if (evr.outcome === "success") {
-        icon = "🎉"; label = "미션 성공!"; amountText = "+" + fmt(evr.amount) + "원"; amountCls = "win";
+        icon = "🎉"; label = "미션 성공!"; amountText = "+" + fmt(evr.amount) + "원"; amountCls = "win"; sfx = "income";
       } else {
-        icon = "😌"; label = "미션 패스"; amountText = "0원"; amountCls = "";
+        icon = "😌"; label = "미션 패스"; amountText = "0원"; amountCls = ""; sfx = null;
       }
     } else if (evr.type === "shop") {
       title = "달토끼 상점 결과";
       if (evr.outcome === "bought") {
-        icon = "🛍️"; label = (ITEM_LABEL[evr.item] || evr.item) + " 구매"; amountText = "-" + fmt(Math.abs(evr.amount)) + "원"; amountCls = "lose";
+        // 사용자 요청: 아이템 구매는 지출(-15,000원)이지만 효과음은 수입음으로 재생합니다.
+        icon = "🛍️"; label = (ITEM_LABEL[evr.item] || evr.item) + " 구매"; amountText = "-" + fmt(Math.abs(evr.amount)) + "원"; amountCls = "lose"; sfx = "income";
       } else {
-        icon = "🙅"; label = "구매 안 함(패스)"; amountText = "0원"; amountCls = "";
+        icon = "🙅"; label = "구매 안 함(패스)"; amountText = "0원"; amountCls = ""; sfx = null;
       }
     } else if (evr.type === "traffic") {
-      // 현금 변화가 없으므로 amountText를 비워 금액 줄을 숨기고, amountCls도 비워
-      // 효과음이 재생되지 않게 합니다(showResultDisplay 참고).
-      title = "고속도로 정체"; icon = "🚧"; label = "다음 이동 -1칸"; amountText = ""; amountCls = "";
+      // 현금 변화가 없으므로 amountText를 비워 금액 줄을 숨기고, 효과음도 재생하지 않습니다.
+      title = "고속도로 정체"; icon = "🚧"; label = "다음 이동 -1칸"; amountText = ""; amountCls = ""; sfx = null;
     } else if (evr.type === "songpyeon") {
+      // 사용자 요청: 현금 변화는 없지만(금액 표시 생략) 토큰을 "획득"하는 것이므로 수입음을
+      // 재생합니다.
       title = "송편가게"; icon = "🥮";
       label = "송편 토큰 +" + evr.count + "개 (누적 " + evr.totalSongpyeon + "개)";
-      amountText = ""; amountCls = "";
+      amountText = ""; amountCls = ""; sfx = "income";
     } else {
       return null;
     }
-    return { title, icon, label, amountText, amountCls };
+    return { title, icon, label, amountText, amountCls, sfx };
   }
 
   function buildTollDisplay(tr, isPayer) {
-    let title, icon, label, amountText, amountCls;
+    let title, icon, label, amountText, amountCls, sfx;
     if (isPayer) {
       title = "통행료 지불";
       icon = "🚗";
       label = (tr.ownerName || "?") + "님에게 지불";
       amountText = "-" + fmt(tr.amount) + "원" + (tr.bankrupt ? " (자금 부족으로 파산)" : "");
       amountCls = "lose";
+      sfx = "expense";
     } else {
       title = "통행료 수입";
       icon = "🏠";
       label = (tr.payerName || "?") + "님이 내 땅에 도착";
       amountText = "+" + fmt(tr.amount) + "원";
       amountCls = "win";
+      sfx = "income";
     }
-    return { title, icon, label, amountText, amountCls };
+    return { title, icon, label, amountText, amountCls, sfx };
   }
 
   // resultLog 항목 하나가 "지금 이 화면(session.playerId)에 보여줘야 할 결과"인지 판단하고,
@@ -1577,12 +1613,15 @@
     $("eventResultBackdrop").classList.remove("hidden");
 
     // 요청: "수입이 발생하는 모든 이벤트"/"지출이 발생하는 모든 이벤트"에 효과음 적용(시작·
-    // 귀성길 용돈은 예외). amountCls가 없는 항목(traffic/songpyeon)은 효과음이 울리지
-    // 않습니다.
-    if (display.amountCls === "win") {
+    // 귀성길 용돈은 예외), 그리고 "송편토큰 획득, 아이템 구매도 income 효과음 적용". 어떤
+    // 효과음을 재생할지는 금액 색상(amountCls)이 아니라 별도의 sfx 필드로 판단합니다 —
+    // 아이템 구매처럼 화면에는 지출(빨간 -15,000원)로 보여주면서 효과음은 수입음을 재생해야
+    // 하는 경우가 있기 때문입니다(buildEventDisplay 위쪽 주석 참고). sfx가 없는 항목(패스/
+    // 고속도로 정체)은 효과음이 울리지 않습니다.
+    if (display.sfx === "income") {
       const s = $("sfxIncomeAudio");
       if (s) { s.currentTime = 0; s.play().catch(() => {}); }
-    } else if (display.amountCls === "lose") {
+    } else if (display.sfx === "expense") {
       const s = $("sfxExpenseAudio");
       if (s) { s.currentTime = 0; s.play().catch(() => {}); }
     }
