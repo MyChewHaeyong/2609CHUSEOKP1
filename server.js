@@ -555,10 +555,12 @@ app.post("/api/rooms/:code/admin/start-game", (req, res) => {
 // 2부 차례상 경매 — 1부와 같은 방/입장/캐릭터 선택 엔진을 그대로 재사용하고,
 // 게임 로직만 game2.js로 분리했습니다.
 
-// 2부 경매 시작: 1부와 동일하게 부족한 자리는 BOT으로 채우고, 각 사람 참가자에게 1부 등수
-// (ranks)에 맞는 시드머니를 지급한 뒤 14개 품목 블라인드 경매를 시작합니다. ranks/part1Assets는
-// 1부와 2부가 서로 다른 방이라 시스템이 자동으로 이어줄 방법이 없어 관리자가 직접 넘겨줍니다
-// (2부 규칙서: 등수 정보가 없으면 전원 2등 시드머니를 기본값으로 씀).
+// 2부 경매 시작: 1부와 동일하게 부족한 자리는 BOT으로 채우고, 각 사람 참가자에게 시드머니를
+// 지급한 뒤 14개 품목 블라인드 경매를 시작합니다. 시작 자금은 admin.html에서 관리자가 직접
+// 입력하는 seedOverrides가 최우선이며, 비어있는 참가자만 1부 등수(ranks, fromPart1RoomCode로
+// 자동 매칭되거나 요청에 직접 넘긴 값) 기준 시드머니로 채워지고, 그것도 없으면 기본값(2등
+// 시드머니)을 씁니다. 1부→2부는 서로 다른 방이라 이름 매칭이 실패할 수 있어(오탈자, 공백 등)
+// seedOverrides로 관리자가 항상 최종 금액을 직접 확인/수정할 수 있게 했습니다.
 // 2부 경매를 실제로 시작하기 전에, 1부 방 코드로 등수 매칭이 잘 되는지 미리 확인할 수 있는
 // 조회 전용 엔드포인트입니다(상태를 바꾸지 않음). 이름이 하나라도 안 맞으면 여기서 미리 보고
 // admin/start-auction 호출 시 ranks/part1Assets로 수동 보정해서 넘길 수 있습니다.
@@ -644,6 +646,9 @@ app.post("/api/rooms/:code/admin/start-auction", (req, res) => {
   const allPlayers = db.prepare("SELECT * FROM players WHERE room_code = ? ORDER BY seat ASC").all(room.code);
   let ranks = req.body?.ranks && typeof req.body.ranks === "object" ? req.body.ranks : {};
   let part1Assets = req.body?.part1Assets && typeof req.body.part1Assets === "object" ? req.body.part1Assets : {};
+  // seedOverrides: 관리자가 admin.html에서 참가자별로 직접 입력한 시작 자금({playerId: amount}).
+  // 1부→2부 이름 자동 매칭 성공 여부와 무관하게 항상 이 값이 있으면 최우선으로 사용됩니다.
+  const seedOverrides = req.body?.seedOverrides && typeof req.body.seedOverrides === "object" ? req.body.seedOverrides : {};
 
   // fromPart1RoomCode를 넘기면 그 1부 방의 최종 등수를 이름으로 매칭해서 자동으로 ranks/
   // part1Assets를 채웁니다. 요청에 ranks/part1Assets를 같이 넘기면(이름이 하나라도 안 맞았을
@@ -676,7 +681,8 @@ app.post("/api/rooms/:code/admin/start-auction", (req, res) => {
       part1Assets,
       now(),
       existing.donationEffects,
-      existing.donationEnabled
+      existing.donationEnabled,
+      seedOverrides
     );
   } catch (e) {
     return res.status(400).json({ ok: false, error: e.message });
