@@ -84,22 +84,14 @@
     <div id="startMsg" class="msg"></div>
   </div>
 
-  <!-- 1부 팔도마블 전용: BGM/효과음. 참가자 화면(player.html)에 실시간으로 반영되는 방 전체
+  <!-- 1부 팔도마블 전용: 효과음. 참가자 화면(player.html)에 실시간으로 반영되는 방 전체
        공유 설정입니다(대기 중일 때부터 미리 맞춰둬도 되고, 게임 시작 후에도 언제든 바꿀 수
-       있습니다). 실제 음원 파일은 public/audio/bgm · sfx-income · sfx-expense로 올려두면
-       자동 적용됩니다(mp3/wav 둘 다 지원, 변환 불필요). BGM(켜짐/꺼짐·음량)과 효과음(음량)은
-       서로 완전히 독립적으로 조절됩니다 — BGM을 꺼도 효과음은 그대로 재생됩니다. 방을 새로
-       시작하면 효과음은 기본으로 켜져 있고, BGM은 기본으로 꺼진 상태로 시작하니 들리게
-       하려면 아래 "BGM 켜짐"을 직접 체크해야 합니다. -->
+       있습니다). 실제 음원 파일은 public/audio/sfx-income · sfx-expense로 올려두면 자동
+       적용됩니다(mp3/wav 둘 다 지원, 변환 불필요). 방을 새로 시작하면 효과음은 기본으로
+       켜져 있습니다. (사용자 요청으로 BGM 기능은 제거했습니다 — 효과음만 남습니다.) -->
   <div class="panel hidden" id="audioPanel">
-    <h2>BGM/효과음 <span class="tag">1부 팔도마블</span></h2>
-    <p class="hint">참가자 화면(player.html)에서 재생되는 배경음악과 수입/지출 효과음을 방 전체에 동일하게 적용합니다. BGM과 효과음은 서로 별개로 켜고 끄고 조절되며, 바꾸면 각 참가자 화면에 다음 폴링(약 1초 이내)에 반영됩니다. 효과음은 시작부터 켜져 있고, BGM은 기본적으로 꺼진 상태로 시작하니 들리게 하려면 아래에서 직접 켜주세요.</p>
-    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:8px">
-      <input id="bgmOnToggle" type="checkbox" style="width:auto; margin:0" />
-      <span style="color:var(--cream)">BGM 켜짐 (기본 꺼짐 — 켜야 참가자 화면에서 재생됩니다)</span>
-    </label>
-    <label for="bgmVolumeRange">BGM 음량 (<span id="bgmVolumeLabel">60</span>%)</label>
-    <input id="bgmVolumeRange" type="range" min="0" max="100" step="5" value="60" style="width:100%; margin-bottom:12px" />
+    <h2>효과음 <span class="tag">1부 팔도마블</span></h2>
+    <p class="hint">참가자 화면(player.html)에서 재생되는 수입/지출 효과음 음량을 방 전체에 동일하게 적용합니다. 바꾸면 각 참가자 화면에 다음 폴링(약 1초 이내)에 반영됩니다.</p>
     <label for="sfxVolumeRange">효과음 음량 (<span id="sfxVolumeLabel">60</span>%)</label>
     <input id="sfxVolumeRange" type="range" min="0" max="100" step="5" value="60" style="width:100%" />
     <div id="audioSettingsMsg" class="msg"></div>
@@ -430,17 +422,11 @@
       data.players.filter((p) => !p.isBot).forEach((p) => renderDonationSummaryFor(p.id, deMap[p.id]));
       renderSoopStatusesFor(data.players, data.soopStatuses);
 
-      // BGM/효과음: 1부 전용. BGM과 효과음은 서로 독립된 설정(별도 볼륨)입니다. 슬라이더를
-      // 드래그하는 중에는 서버 값으로 덮어써서 손이 튀지 않도록, 지금 포커스가 그 슬라이더에
-      // 가 있지 않을 때만 값을 다시 그립니다.
+      // 효과음: 1부 전용(BGM은 사용자 요청으로 제거됨). 슬라이더를 드래그하는 중에는 서버
+      // 값으로 덮어써서 손이 튀지 않도록, 지금 포커스가 그 슬라이더에 가 있지 않을 때만 값을
+      // 다시 그립니다.
       if (currentGameMode === "paldomarble") {
-        const audioSettings = data.room.state.audioSettings || { bgmOn: false, bgmVolume: 0.6, sfxVolume: 0.6 };
-        $("bgmOnToggle").checked = audioSettings.bgmOn === true;
-        if (document.activeElement !== $("bgmVolumeRange")) {
-          const bgmPct = Math.round((typeof audioSettings.bgmVolume === "number" ? audioSettings.bgmVolume : 0.6) * 100);
-          $("bgmVolumeRange").value = String(bgmPct);
-          $("bgmVolumeLabel").textContent = String(bgmPct);
-        }
+        const audioSettings = data.room.state.audioSettings || { sfxVolume: 0.6 };
         if (document.activeElement !== $("sfxVolumeRange")) {
           const sfxPct = Math.round((typeof audioSettings.sfxVolume === "number" ? audioSettings.sfxVolume : 0.6) * 100);
           $("sfxVolumeRange").value = String(sfxPct);
@@ -801,7 +787,7 @@
     }
   });
 
-  // --- 1부 팔도마블: BGM/효과음 ---
+  // --- 1부 팔도마블: 효과음(BGM은 사용자 요청으로 제거됨) ---
   async function sendAudioSettings(payload, revert) {
     const { code, key } = creds();
     if (!code || !key) {
@@ -825,19 +811,8 @@
       $("audioSettingsMsg").classList.add("err");
     }
   }
-  $("bgmOnToggle").addEventListener("change", () => {
-    const on = $("bgmOnToggle").checked;
-    sendAudioSettings({ bgmOn: on }, () => { $("bgmOnToggle").checked = !on; });
-  });
   // 드래그 중엔 실시간으로 숫자 라벨만 바꾸고(잦은 요청 방지), 손을 뗀 시점(change)에 한 번만
-  // 전송합니다. BGM 음량과 효과음 음량은 서로 독립된 값이라 각자 따로 전송합니다.
-  $("bgmVolumeRange").addEventListener("input", () => {
-    $("bgmVolumeLabel").textContent = $("bgmVolumeRange").value;
-  });
-  $("bgmVolumeRange").addEventListener("change", () => {
-    const pct = Number($("bgmVolumeRange").value);
-    sendAudioSettings({ bgmVolume: pct / 100 }, () => {});
-  });
+  // 전송합니다.
   $("sfxVolumeRange").addEventListener("input", () => {
     $("sfxVolumeLabel").textContent = $("sfxVolumeRange").value;
   });
