@@ -167,7 +167,11 @@
               <div id="bidControls">
                 <div class="bidbtns" id="bidBtns"></div>
                 <div class="manualbid-row">
-                  <input id="manualBidInput" type="number" inputmode="numeric" min="0" step="10000" placeholder="직접 금액 입력" />
+                  <!-- type="number"은 일부 모바일 인앱 브라우저(카카오톡/네이버 등 웹뷰)에서 숫자
+                       키패드가 안 뜨거나 입력 자체가 씹히는 경우가 있어(요청: "직접 금액 입력이
+                       안되는 부분"), type="text" + inputmode="numeric"으로 바꾸고 아래 input
+                       리스너에서 숫자 아닌 문자만 걸러냅니다. -->
+                  <input id="manualBidInput" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="직접 금액 입력" />
                   <button id="manualBidBtn" class="secondary" type="button">입찰</button>
                 </div>
                 <button id="passBidBtn" class="danger" type="button">이번 품목 포기</button>
@@ -501,6 +505,9 @@
   // 빠른 입찰 버튼 3개는 폴링 때마다 지웠다가 새로 만들면(innerHTML 재생성) 브라우저가 매초
   // 레이아웃을 다시 계산하면서 화면이 미세하게 위아래로 흔들리는 문제가 있었습니다. 그래서
   // 버튼 DOM은 처음 한 번만 만들어두고, 이후에는 내용(금액)과 비활성화 여부만 갱신합니다.
+  // 요청: "+10000/+30000/+50000 클릭 후 바로 입찰제출이 아니고 입찰 버튼을 눌러야 입찰되도록" —
+  // 그래서 클릭 시 곧바로 서버에 입찰을 보내지 않고, 계산된 금액을 직접 입력 칸에 채워주기만
+  // 합니다. 실제 제출은 항상 "입찰" 버튼(submitManualBid)을 눌러야 일어납니다.
   let quickBidBtnEls = null;
   function ensureQuickBidButtons() {
     if (quickBidBtnEls) return quickBidBtnEls;
@@ -510,7 +517,10 @@
       btn.type = "button";
       btn.addEventListener("click", () => {
         const amt = Number(btn.dataset.amt || 0);
-        if (amt > 0) placeBid(amt);
+        if (amt > 0) {
+          $("manualBidInput").value = String(amt);
+          $("bidMsg").classList.add("hidden");
+        }
       });
       holder.appendChild(btn);
       return btn;
@@ -620,7 +630,9 @@
   }
 
   function submitManualBid() {
-    const amt = Number($("manualBidInput").value);
+    // input이 type="text"라 숫자 외 문자가 섞여 들어올 수 있으니(붙여넣기 등) 한 번 더 걸러서 읽습니다.
+    const digitsOnly = $("manualBidInput").value.replace(/[^0-9]/g, "");
+    const amt = Number(digitsOnly);
     if (!amt || amt <= 0) {
       $("bidMsg").textContent = "입찰 금액을 입력해주세요.";
       $("bidMsg").classList.remove("hidden");
@@ -631,6 +643,12 @@
   $("manualBidBtn").addEventListener("click", submitManualBid);
   $("manualBidInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") submitManualBid();
+  });
+  // 숫자만 남기고 즉시 정리(붙여넣기·자동완성으로 콤마/공백 등이 들어와도 항상 순수 숫자만 남게).
+  $("manualBidInput").addEventListener("input", () => {
+    const el = $("manualBidInput");
+    const cleaned = el.value.replace(/[^0-9]/g, "");
+    if (cleaned !== el.value) el.value = cleaned;
   });
   $("passBidBtn").addEventListener("click", passBid);
 
