@@ -824,8 +824,11 @@ app.post("/api/rooms/:code/admin/donation-toggle", (req, res) => {
   const enabled = !!req.body?.enabled;
   const state = JSON.parse(room.state_json);
   state.donationEnabled = enabled;
-  if (!Array.isArray(state.log)) state.log = [];
-  state.log.push(`[후원 효과] 방 전체 ${enabled ? "켜짐" : "꺼짐"}으로 변경됨(관리자)`);
+  // Game.pushLog를 씁니다(직접 state.log.push하지 않음) — 진행 기록이 무한정 쌓이지 않도록
+  // 최근 것만 남기고, 팔도마블 결과 팝업이 쓰는 순번(state.logSeq)도 함께 관리해주기
+  // 때문입니다(game.js의 pushLog 함수 주석 참고). 경매(auction) 모드 상태에도 안전하게
+  // 적용됩니다(그쪽은 이 필드를 쓰지 않을 뿐 해가 되지 않습니다).
+  Game.pushLog(state, `[후원 효과] 방 전체 ${enabled ? "켜짐" : "꺼짐"}으로 변경됨(관리자)`);
   const status = room.game_mode === "auction" ? auctionStatusFor(state.phase) : room.status;
   const newVersion = persistState(room, state, `후원 효과 ${enabled ? "켜짐" : "꺼짐"}`, status);
   const responseState = room.game_mode === "auction" ? Game2.serializeForClient(state, { forAdmin: true }) : state;
@@ -853,8 +856,9 @@ app.post("/api/rooms/:code/admin/audio-settings", (req, res) => {
   if (req.body?.bgmVolume !== undefined) next.bgmVolume = Game.clampVolume(req.body.bgmVolume, 0.6);
   if (req.body?.sfxVolume !== undefined) next.sfxVolume = Game.clampVolume(req.body.sfxVolume, 0.6);
   state.audioSettings = next;
-  if (!Array.isArray(state.log)) state.log = [];
-  state.log.push(
+  // 위 donation-toggle과 동일한 이유로 Game.pushLog를 씁니다.
+  Game.pushLog(
+    state,
     `[음향] BGM ${next.bgmOn ? "켜짐" : "꺼짐"} · BGM 음량 ${Math.round(next.bgmVolume * 100)}% · 효과음 음량 ${Math.round(next.sfxVolume * 100)}%로 변경됨(관리자)`
   );
   const status = room.game_mode === "auction" ? auctionStatusFor(state.phase) : room.status;
