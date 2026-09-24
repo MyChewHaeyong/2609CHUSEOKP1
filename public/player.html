@@ -519,7 +519,7 @@
     { pos:19, name:"수원", type:"city", region:"sd", price:105000 },
     { pos:20, name:"서울", type:"city", region:"sd", price:130000 },
   ];
-  const ITEM_LABEL = { "toll-free":"통행료 면제권", reroll:"주사위 재굴림권", "half-build":"건설비 반값권" };
+  const ITEM_LABEL = { "toll-free":"통행료 면제권", reroll:"주사위 한번 더!", "half-build":"건설비 반값권" };
   const fmt = (n) => (n || 0).toLocaleString("ko-KR");
 
   function loadSession() {
@@ -970,7 +970,7 @@
     } else if (state.turnPhase === "awaiting-endturn") {
       area.appendChild(makeBtn("턴 종료", () => sendAction("end-turn", {})));
       if (me.items && me.items.includes("reroll")) {
-        area.appendChild(makeBtn("주사위 재굴림권 사용", () => sendAction("use-item", { item: "reroll" }), true));
+        area.appendChild(makeBtn("주사위 한번 더! 사용", () => sendAction("use-item", { item: "reroll" }), true));
       }
     }
   }
