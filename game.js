@@ -242,6 +242,23 @@ function initState(players, existingDonationEffects, existingDonationEnabled, ex
   return st;
 }
 
+// 살아있는(파산하지 않은) 참가자 수. 통행료의 "2명 생존" 배율 판정에 씁니다.
+function aliveCount(state) {
+  return state.turnOrder.filter((id) => !state.players[id].bankrupt).length;
+}
+
+// 통행료에 적용되는 "몇 배" 배율. 두 조건은 서로 독립적으로 곱해집니다(요청 사항):
+// - 게임 시작 후 90분 경과: 2배
+// - 생존자가 2명만 남음: 2배
+// 두 조건이 동시에 만족되면(이미 90분이 지난 뒤에 2명만 남거나, 2명만 남은 채로 90분을
+// 넘기거나 순서 상관없이) 2 × 2 = 4배가 됩니다.
+function tollTimeMultiplier(state, now) {
+  let mult = 1;
+  if (state.gameStartedAt && now - state.gameStartedAt > TOLL_DOUBLE_MS) mult *= 2;
+  if (aliveCount(state) <= 2) mult *= 2;
+  return mult;
+}
+
 // 요청: "권역 보너스 모두 제거" — 한 권역의 도시를 전부 소유하면 통행료 등급이
 // 0.1→0.2로 올라가던 "올소유 보너스"를 없앴습니다(사용자 확정: 이 보너스만 제거, 권역마다
 // 다른 기본 배율(TOLL_MULT)은 그대로 유지). 이제 통행료 등급은 땅/별장/호텔 여부로만 정해집니다.
@@ -257,7 +274,7 @@ function tollFor(state, pos, now) {
   else if (prop.villa) tier = 0.5;
   else tier = 0.1;
   let amount = Math.round(tile.price * tier * mult);
-  if (state.gameStartedAt && now - state.gameStartedAt > TOLL_DOUBLE_MS) amount *= 2;
+  amount *= tollTimeMultiplier(state, now);
   // 후원 효과는 통행료에만 적용됩니다(사용자 확정 사항: "후원은 통행료만을 기준으로 함").
   // 적용 기준은 "받는 사람(땅 주인)"의 누적 보정률입니다 — 내는 사람(방문자)이 아니라
   // 주인 본인 채널의 후원이 자기 땅의 통행료 "수입"에 영향을 준다는 뜻입니다(긍정 보정률
@@ -279,7 +296,7 @@ function tollForPlain(state, pos, now) {
   else if (prop.villa) tier = 0.5;
   else tier = 0.1;
   let amount = Math.round(tile.price * tier * mult);
-  if (state.gameStartedAt && now - state.gameStartedAt > TOLL_DOUBLE_MS) amount *= 2;
+  amount *= tollTimeMultiplier(state, now);
   return amount;
 }
 
