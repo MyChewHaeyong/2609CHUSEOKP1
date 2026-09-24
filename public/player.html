@@ -807,15 +807,26 @@
     });
   }
 
+  // game.js의 tollTimeMultiplier()와 동일한 두 조건(90분 경과 / 생존자 2명)을 화면에서도
+  // 그대로 판정해서 안내 문구를 보여줍니다(실제 청구액은 항상 서버 계산을 따름).
+  function aliveCountClient(state) {
+    return (state.turnOrder || []).filter((id) => state.players[id] && !state.players[id].bankrupt).length;
+  }
+
   function renderTimer(state, serverTime) {
     const bar = $("timerBar");
     if (!state.gameStartedAt) { bar.textContent = "경과 시간 - (첫 주사위를 굴리면 시작)"; bar.classList.remove("hot"); return; }
     const elapsedMs = serverTime - state.gameStartedAt;
     const mins = Math.floor(elapsedMs / 60000);
     const secs = Math.floor((elapsedMs % 60000) / 1000);
-    const hot = elapsedMs > 90 * 60 * 1000;
-    bar.textContent = "경과 시간 " + String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0") +
-      (hot ? " · 통행료 2배 인상 중" : "");
+    const timeDouble = elapsedMs > 90 * 60 * 1000;
+    const twoLeft = aliveCountClient(state) <= 2;
+    const hot = timeDouble || twoLeft;
+    let suffix = "";
+    if (timeDouble && twoLeft) suffix = " · 통행료 4배 인상 중(경과 90분+생존자 2명)";
+    else if (timeDouble) suffix = " · 통행료 2배 인상 중(경과 90분)";
+    else if (twoLeft) suffix = " · 통행료 2배 인상 중(생존자 2명)";
+    bar.textContent = "경과 시간 " + String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0") + suffix;
     bar.classList.toggle("hot", hot);
   }
 
