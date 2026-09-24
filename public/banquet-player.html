@@ -211,6 +211,7 @@
               <tbody id="rankBody"></tbody>
             </table>
             <p class="sub" style="margin:10px 0 0">경품은 사람 참가자에게만 지급됩니다.</p>
+            <button id="finalGiftBtn" style="margin-top:10px">🎁 마지막 선물 확인하기</button>
           </div>
 
           <div class="stat"><div class="lbl">내 자금</div><div class="val" id="myCash">-</div></div>
@@ -867,6 +868,12 @@
   $("leaveBtn").addEventListener("click", () => {
     localStorage.removeItem("banquet_session");
     location.reload();
+  });
+
+  // 2부 최종 결과 화면의 "마지막 선물 확인하기" — 별도 안내 자료(슬라이드)를 새 탭으로 엽니다.
+  const FINAL_GIFT_URL = "https://docs.google.com/presentation/d/1vpqUPEXqGfT-7YRNGt6AtvNmh8aQ-1ns/edit?usp=sharing&ouid=112823533140169828697&rtpof=true&sd=true";
+  $("finalGiftBtn").addEventListener("click", () => {
+    window.open(FINAL_GIFT_URL, "_blank", "noopener");
   });
 
   renderCharPicker();
