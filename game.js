@@ -103,6 +103,32 @@ function clampVolume(v, fallback) {
 }
 
 // ---------------------------------------------------------------------------
+// state.log(화면에 보여주는 "진행 기록" 텍스트 줄)에 새 줄을 추가하는 전용 함수입니다.
+// ★ 실제로 있었던 문제: 예전에는 이 배열이 게임이 아무리 길어져도 계속 무한정 쌓이기만
+// 했는데, 참가자 화면이 1초마다 상태 전체(state 전체, 이 log 배열 포함)를 서버에 요청해서
+// 받아가는 구조라, 게임이 길어질수록 매 요청·매 응답이 점점 무거워졌습니다. 특히 여러 기기가
+// 동시에 폴링하는 상황에서 서버가 한 번에 여러 요청을 처리해야 할 때, 이렇게 무거워진 응답
+// 하나하나가 조금씩 더 오래 걸리기 시작하면 다음 요청들이 그 뒤에 밀려서 쌓이고, 쌓인
+// 요청이 많아질수록 각각이 더 오래 기다리게 되는 식으로 전체 응답이 눈덩이처럼 느려지는
+// 사고(참가자 화면이 한동안 먹통이 되는 현상)로 이어질 수 있었습니다.
+// 그래서 화면에 보여주는 배열 자체는 LOG_KEEP개(최근 것)만 남기고 오래된 줄은 잘라내되,
+// "몇 번째로 생긴 사건인지"를 나타내는 값은 배열 길이가 아니라 절대 줄어들지 않는 별도의
+// 카운터(state.logSeq)로 따로 관리합니다 — 이 값은 아래 pushResultLog의 atLogLen(참가자
+// 화면이 "새로 생긴 결과인지" 판단하는 기준)으로도 그대로 쓰이는데, 만약 배열 길이를 그대로
+// atLogLen으로 썼다면 배열이 잘려서 길이가 줄어드는 순간 그 판단이 틀어져 팝업이 중복되거나
+// 아예 안 뜨는 문제가 생겼을 것이기 때문입니다.
+const LOG_KEEP = 200;
+function pushLog(state, line) {
+  if (!Array.isArray(state.log)) state.log = [];
+  state.log.push(line);
+  // logSeq가 아직 없는 상태(이 수정 이전에 저장된 게임을 이어서 부르는 경우 등)라면 지금까지의
+  // log.length를 이어받아 시작합니다 — 이 값이 정확히 몇 번째인지보다는, 앞으로 절대 줄어들지
+  // 않고 계속 증가하기만 하면 되므로 이 정도 근사로 충분합니다.
+  state.logSeq = (typeof state.logSeq === "number" ? state.logSeq : state.log.length) + 1;
+  if (state.log.length > LOG_KEEP) state.log.splice(0, state.log.length - LOG_KEEP);
+}
+
+// ---------------------------------------------------------------------------
 // 참가자 화면(player.html)에 "무슨 일이 있었는지" 팝업으로 보여주기 위한 결과 기록입니다.
 // ★ 예전에는 state.lastEventResult/state.lastTollResult처럼 "가장 최근 결과 하나"만
 // 담는 필드였는데, 실제로 있었던 문제: BOT이 여러 명이면 사람이 한 번 폴링(약 1초)하는
@@ -112,8 +138,9 @@ function clampVolume(v, fallback) {
 // 덮어써져서 그대로 사라져버립니다 — 팝업이 아예 안 뜨는 것처럼 보이는 사고였습니다.
 // 그래서 최근 결과 하나만 저장하지 않고, 배열(resultLog)에 계속 쌓아두고 각 참가자 화면이
 // "내가 마지막으로 확인한 atLogLen 이후에 새로 생긴 것 중 내 것" 전부를 찾아서 차례로
-// 보여주는 방식으로 바꿨습니다. atLogLen은 그 결과가 log에 기록된 시점의 state.log.length라
-// 게임 안에서 항상 유일하고 단조 증가하므로, 이것만으로도 순서/중복 판단에 충분합니다.
+// 보여주는 방식으로 바꿨습니다. atLogLen은 그 결과가 기록된 시점의 state.logSeq 값이라
+// 게임 안에서 항상 유일하고(위 pushLog 참고 — state.log 배열이 잘려도 절대 줄어들지
+// 않습니다) 단조 증가하므로, 이것만으로도 순서/중복 판단에 충분합니다.
 // entry는 kind가 "event"(복주머니/친척집/달토끼상점/복불복윷판/고속도로정체/송편가게)이면
 // playerId 하나에게만, kind가 "toll"(통행료)이면 payerId(낸 사람)/ownerId(땅주인) 두
 // 사람에게 각각 보여줍니다.
@@ -152,6 +179,10 @@ function initState(players, existingDonationEffects, existingDonationEnabled, ex
     resultLog: [],
     winnerId: null,
     log: ["게임을 시작합니다."],
+    // log 배열이 나중에(LOG_KEEP을 넘어서면) 잘려도 atLogLen 판단이 틀어지지 않도록, 배열
+    // 길이와 별개로 절대 줄어들지 않는 카운터입니다(위 pushLog 함수 주석 참고). 초기 로그
+    // 1줄과 맞춰 1에서 시작합니다.
+    logSeq: 1,
     players: {},
     properties: {},
     donationEffects: existingDonationEffects || {},
@@ -380,14 +411,14 @@ function bankruptPlayer(state, playerId) {
   });
   if (!state.bankruptOrder) state.bankruptOrder = [];
   state.bankruptOrder.push(playerId);
-  state.log.push(`${p.name} 파산했습니다.`);
+  pushLog(state, `${p.name} 파산했습니다.`);
   const alive = state.turnOrder.filter((id) => !state.players[id].bankrupt);
   if (alive.length <= 1) {
     state.phase = "ended";
     state.winnerId = alive[0] || null;
     state.turnPhase = "ended";
     state.finalRanking = computeFinalRanking(state);
-    state.log.push(alive[0] ? `게임 종료! 승자: ${state.players[alive[0]].name}` : "게임 종료!");
+    pushLog(state, alive[0] ? `게임 종료! 승자: ${state.players[alive[0]].name}` : "게임 종료!");
     return;
   }
   // 사람 참가자가 전원 파산해서 BOT끼리만 남으면, 더 진행해도 사람이 볼 게 없으므로
@@ -399,7 +430,7 @@ function bankruptPlayer(state, playerId) {
     state.turnPhase = "ended";
     state.finalRanking = computeFinalRanking(state);
     state.winnerId = state.finalRanking[0] ? state.finalRanking[0].playerId : null;
-    state.log.push("남은 참가자가 모두 BOT이라 자동으로 종료하고 자산 기준으로 순위를 정산했습니다.");
+    pushLog(state, "남은 참가자가 모두 BOT이라 자동으로 종료하고 자산 기준으로 순위를 정산했습니다.");
   }
 }
 
@@ -413,7 +444,7 @@ function forceEndGame(state) {
   const ranking = computeFinalRanking(state);
   state.finalRanking = ranking;
   state.winnerId = ranking[0] ? ranking[0].playerId : null;
-  state.log.push("관리자가 게임을 강제 종료하고, 현재 자산 기준으로 순위를 정산했습니다.");
+  pushLog(state, "관리자가 게임을 강제 종료하고, 현재 자산 기준으로 순위를 정산했습니다.");
   return state;
 }
 
@@ -435,7 +466,7 @@ function adminMovePlayer(state, playerId, tilePos, now) {
   const fromTile = TILES[p.position];
   const toTile = TILES[pos];
   p.position = pos;
-  state.log.push(
+  pushLog(state,
     `(관리자) ${p.name}: ${fromTile ? fromTile.name : p.position}번 칸 → ${toTile.name}(${pos}번) 칸으로 강제 이동`
   );
 
@@ -446,7 +477,7 @@ function adminMovePlayer(state, playerId, tilePos, now) {
     // — 관리자가 의도적으로 개입하는 상황이므로 정상 동작입니다.
     if (state.currentPlayerId && state.currentPlayerId !== playerId) {
       const other = state.players[state.currentPlayerId];
-      state.log.push(`(관리자) 진행 중이던 ${other ? other.name : "?"}의 턴을 대신하고, 강제 이벤트를 처리합니다.`);
+      pushLog(state, `(관리자) 진행 중이던 ${other ? other.name : "?"}의 턴을 대신하고, 강제 이벤트를 처리합니다.`);
     }
     const idx = state.turnOrder.indexOf(playerId);
     if (idx !== -1) state.currentIdx = idx;
@@ -525,29 +556,29 @@ function startEvent(state, playerId, tile, now) {
     state.turnPhase = "awaiting-event";
   } else if (tile.eventType === "traffic") {
     p.nextRollPenalty = true;
-    state.log.push(`${p.name}: 고속도로 정체 (다음 이동 -1)`);
+    pushLog(state, `${p.name}: 고속도로 정체 (다음 이동 -1)`);
     // 사용자 요청("모든 이벤트를 전부 팝업 표시"): 현금 증감이 없는 이벤트도 결과를 알 수
     // 있도록 팝업 큐에 남깁니다. amount가 없으므로 효과음(sfx)은 울리지 않습니다.
-    pushResultLog(state, { kind: "event", type: "traffic", playerId, atLogLen: state.log.length });
+    pushResultLog(state, { kind: "event", type: "traffic", playerId, atLogLen: state.logSeq });
     state.turnPhase = "awaiting-endturn";
   } else if (tile.eventType === "songpyeon") {
     const n = 5 + Math.floor(Math.random() * 6); // 5~10개(사용자 확정 사항 — 이전에는 1~3개)
     p.songpyeon += n;
-    state.log.push(`${p.name}: 송편 토큰 +${n} (누적 ${p.songpyeon})`);
+    pushLog(state, `${p.name}: 송편 토큰 +${n} (누적 ${p.songpyeon})`);
     // 위 traffic과 동일한 이유로 팝업 큐에 남깁니다(현금 증감 없음 → 효과음 없음).
-    pushResultLog(state, { kind: "event", type: "songpyeon", count: n, totalSongpyeon: p.songpyeon, playerId, atLogLen: state.log.length });
+    pushResultLog(state, { kind: "event", type: "songpyeon", count: n, totalSongpyeon: p.songpyeon, playerId, atLogLen: state.logSeq });
     state.turnPhase = "awaiting-endturn";
   } else if (tile.eventType === "yut") {
     const { label, delta } = rollYut();
     if (delta >= 0) p.cash += delta;
     else chargePlayer(state, playerId, -delta, now);
-    state.log.push(`${p.name}: 복불복 윷판 결과 "${label}" ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}원`);
+    pushLog(state, `${p.name}: 복불복 윷판 결과 "${label}" ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}원`);
     // playerId를 함께 남겨두는 이유: 누구 화면에 팝업으로 보여줘야 하는지 참가자 화면
     // (player.html)에서 정확히 구분하기 위해서입니다(실제로 있었던 버그: 이게 없으면 BOT이나
     // 다른 참가자 턴에 생긴 결과가, 그 이후 내 턴이 됐을 때 마치 내 결과인 것처럼 뒤늦게
     // 잘못 표시될 수 있었습니다). pushResultLog를 쓰는 이유는 파일 상단 주석 참고(BOT 연속
     // 턴 중 결과가 덮어써져 사라지는 문제 수정).
-    pushResultLog(state, { kind: "event", type: "yut", label, delta, playerId, atLogLen: state.log.length });
+    pushResultLog(state, { kind: "event", type: "yut", label, delta, playerId, atLogLen: state.logSeq });
     state.turnPhase = "awaiting-endturn";
   }
 }
@@ -561,37 +592,37 @@ function applyEventChoice(state, playerId, choice, now) {
     const delta = ev.cards[idx];
     if (delta >= 0) p.cash += delta;
     else chargePlayer(state, playerId, -delta, now);
-    state.log.push(`${p.name}: 복주머니 카드 결과 ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}`);
+    pushLog(state, `${p.name}: 복주머니 카드 결과 ${delta >= 0 ? "+" : ""}${delta.toLocaleString()}`);
     // 요청: "모든 이벤트 결과는 윷놀이 결과와 동일한 방식으로 팝업으로 안내" (수입/지출
     // 이벤트 한정) — 복주머니도 현금 증감이 있는 이벤트이므로 yut/relative와 같은
     // pushResultLog 패턴을 따릅니다. playerId를 남겨두는 이유는 위 rollYut 쪽 주석 참고
     // (누구 화면에 보여줘야 할 결과인지 구분하기 위함 — BOT/다른 참가자 결과가 내 턴에
     // 뒤늦게 잘못 뜨는 걸 막는 용도).
-    pushResultLog(state, { kind: "event", type: "market", amount: delta, playerId, atLogLen: state.log.length });
+    pushResultLog(state, { kind: "event", type: "market", amount: delta, playerId, atLogLen: state.logSeq });
   } else if (ev.type === "relative") {
     if (choice === "perform") {
       const bonus = 5000 + Math.floor(Math.random() * 6) * 1000;
       p.cash += bonus;
-      state.log.push(`${p.name}: 친척집 미션 성공! +${bonus.toLocaleString()}원`);
-      pushResultLog(state, { kind: "event", type: "relative", outcome: "success", amount: bonus, playerId, atLogLen: state.log.length });
+      pushLog(state, `${p.name}: 친척집 미션 성공! +${bonus.toLocaleString()}원`);
+      pushResultLog(state, { kind: "event", type: "relative", outcome: "success", amount: bonus, playerId, atLogLen: state.logSeq });
     } else {
       // 패스하면 어떤 경우에도 돈을 받지 못합니다(사용자 확정 사항) — 기존에도 그랬지만,
       // 참가자 화면에서 "0원"임이 분명히 보이도록 로그·결과 배너 문구를 명확히 함.
-      state.log.push(`${p.name}: 친척집 미션 패스 (획득 금액 없음)`);
-      pushResultLog(state, { kind: "event", type: "relative", outcome: "pass", amount: 0, playerId, atLogLen: state.log.length });
+      pushLog(state, `${p.name}: 친척집 미션 패스 (획득 금액 없음)`);
+      pushResultLog(state, { kind: "event", type: "relative", outcome: "pass", amount: 0, playerId, atLogLen: state.logSeq });
     }
   } else if (ev.type === "shop") {
     const item = ["toll-free", "reroll", "half-build"].includes(choice) ? choice : null;
     if (item && p.cash >= 15000) {
       p.cash -= 15000;
       p.items.push(item);
-      state.log.push(`${p.name}: 달토끼 상점에서 ${itemLabel(item)} 구매`);
+      pushLog(state, `${p.name}: 달토끼 상점에서 ${itemLabel(item)} 구매`);
       // 아이템 구매는 15,000원 지출 이벤트이므로 다른 수입/지출 이벤트와 동일하게
       // pushResultLog로 남겨 참가자 화면에 팝업으로 안내합니다.
-      pushResultLog(state, { kind: "event", type: "shop", outcome: "bought", item, amount: -15000, playerId, atLogLen: state.log.length });
+      pushResultLog(state, { kind: "event", type: "shop", outcome: "bought", item, amount: -15000, playerId, atLogLen: state.logSeq });
     } else {
-      state.log.push(`${p.name}: 달토끼 상점 패스`);
-      pushResultLog(state, { kind: "event", type: "shop", outcome: "pass", item: null, amount: 0, playerId, atLogLen: state.log.length });
+      pushLog(state, `${p.name}: 달토끼 상점 패스`);
+      pushResultLog(state, { kind: "event", type: "shop", outcome: "pass", item: null, amount: 0, playerId, atLogLen: state.logSeq });
     }
   }
   state.pendingEvent = null;
@@ -613,14 +644,14 @@ function resolveToll(state, playerId, useItem, now) {
   const tfIdx = p.items.indexOf("toll-free");
   if (useItem && tfIdx !== -1 && amount > 0) {
     p.items.splice(tfIdx, 1);
-    state.log.push(`${p.name}: 통행료 면제권 사용`);
+    pushLog(state, `${p.name}: 통행료 면제권 사용`);
     amount = 0;
   }
   if (amount > 0) {
     const paid = chargePlayer(state, playerId, amount, now);
     const owner = state.players[pending.ownerId];
     if (owner && paid > 0) owner.cash += paid;
-    state.log.push(
+    pushLog(state,
       `${p.name} → ${owner ? owner.name : "?"} 통행료 ${paid.toLocaleString()}` +
         (paid < amount ? " (자금 부족으로 파산)" : "")
     );
@@ -640,7 +671,7 @@ function resolveToll(state, playerId, useItem, now) {
         ownerName: owner.name,
         amount: paid,
         bankrupt: paid < amount,
-        atLogLen: state.log.length,
+        atLogLen: state.logSeq,
       });
     }
   }
@@ -677,14 +708,14 @@ function applyRoll(state, playerId, now) {
   const passedGo = steps > 0 && prevPos + steps >= TILES.length;
   p.position = newPos;
   state.lastRoll = { roll, steps, stayed, from: prevPos, to: newPos };
-  state.log.push(`${p.name}: 주사위 ${roll}${stayed ? " (정체로 이동 없음)" : ""}`);
+  pushLog(state, `${p.name}: 주사위 ${roll}${stayed ? " (정체로 이동 없음)" : ""}`);
   if (stayed) {
     state.turnPhase = "awaiting-endturn";
     return;
   }
   if (passedGo || newPos === 0) {
     p.cash += GO_BONUS;
-    state.log.push(`${p.name}: 귀성길 출발 통과, 용돈 +${GO_BONUS.toLocaleString()}`);
+    pushLog(state, `${p.name}: 귀성길 출발 통과, 용돈 +${GO_BONUS.toLocaleString()}`);
   }
   const tile = TILES[newPos];
   if (tile.type === "start") {
@@ -696,7 +727,7 @@ function applyRoll(state, playerId, now) {
     if (!prop || !prop.ownerId) {
       if (wasPenalized) {
         // 고속도로 정체로 밀려서 도착한 빈 땅은 이번 턴엔 구매할 수 없습니다(사용자 확정 사항).
-        state.log.push(`${p.name}: 고속도로 정체로 밀려 도착한 칸이라 이번엔 구매할 수 없습니다.`);
+        pushLog(state, `${p.name}: 고속도로 정체로 밀려 도착한 칸이라 이번엔 구매할 수 없습니다.`);
         state.turnPhase = "awaiting-endturn";
         return;
       }
@@ -744,12 +775,12 @@ function maybeBotBuild(state, playerId) {
     if (!prop.villa && p.cash - vCost >= 20000) {
       p.cash -= vCost;
       prop.villa = true;
-      state.log.push(`${p.name}(BOT): ${tile.name}에 별장 건설`);
+      pushLog(state, `${p.name}(BOT): ${tile.name}에 별장 건설`);
     }
     if (!prop.hotel && p.cash - hCost >= 20000) {
       p.cash -= hCost;
       prop.hotel = true;
-      state.log.push(`${p.name}(BOT): ${tile.name}에 호텔 건설`);
+      pushLog(state, `${p.name}(BOT): ${tile.name}에 호텔 건설`);
     }
   }
 }
@@ -783,7 +814,7 @@ function botTakeTurn(state, now) {
     if (price <= p.cash && afford >= 20000) {
       state.properties[tile.pos] = { ownerId: pid, villa: false, hotel: false };
       p.cash -= price;
-      state.log.push(`${p.name}(BOT): ${tile.name} 구매`);
+      pushLog(state, `${p.name}(BOT): ${tile.name} 구매`);
     }
     state.turnPhase = "awaiting-endturn";
   } else if (state.turnPhase === "awaiting-event") {
@@ -828,7 +859,7 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       if (p.cash < price) throw new Error("자금이 부족합니다.");
       p.cash -= price;
       state.properties[tile.pos] = { ownerId: playerId, villa: false, hotel: false };
-      state.log.push(`${p.name}: ${tile.name} 구매`);
+      pushLog(state, `${p.name}: ${tile.name} 구매`);
       state.turnPhase = "awaiting-endturn";
       break;
     }
@@ -886,13 +917,13 @@ function applyPlayerAction(state, playerId, type, payload, now) {
         if (halfIdx === -1) throw new Error("보유한 건설비 반값권이 없습니다.");
         cost = Math.round(cost * 0.5);
         p.items.splice(halfIdx, 1);
-        state.log.push(`${p.name}: 건설비 반값권 사용`);
+        pushLog(state, `${p.name}: 건설비 반값권 사용`);
       }
       if (p.cash < cost) throw new Error("자금이 부족합니다.");
       p.cash -= cost;
       if (payload.level === "villa") prop.villa = true;
       else prop.hotel = true;
-      state.log.push(`${p.name}: ${tile.name}에 ${payload.level === "villa" ? "별장" : "호텔"} 건설`);
+      pushLog(state, `${p.name}: ${tile.name}에 ${payload.level === "villa" ? "별장" : "호텔"} 건설`);
       break;
     }
     case "sell-property": {
@@ -908,7 +939,7 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       const refund = sellPiece(state, pos, part);
       p.cash += refund;
       const partLabel = part === "villa" ? "별장" : part === "hotel" ? "호텔" : "땅";
-      state.log.push(`${p.name}: ${tileName} ${partLabel} 매각 +${refund.toLocaleString()}`);
+      pushLog(state, `${p.name}: ${tileName} ${partLabel} 매각 +${refund.toLocaleString()}`);
       break;
     }
     case "use-item": {
@@ -918,7 +949,7 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       const idx = p.items.indexOf("reroll");
       if (idx === -1) throw new Error("보유한 재굴림권이 없습니다.");
       p.items.splice(idx, 1);
-      state.log.push(`${p.name}: 주사위 재굴림권 사용`);
+      pushLog(state, `${p.name}: 주사위 재굴림권 사용`);
       state.turnPhase = "awaiting-roll";
       applyRoll(state, playerId, now);
       break;
@@ -953,7 +984,7 @@ function addDonation(state, playerId, count, now, source) {
   state.donationEffects[playerId] = wrapper.donationEffect;
   const pname = (state.players && state.players[playerId] && state.players[playerId].name) || playerId;
   fired.forEach((f) => {
-    state.log.push(
+    pushLog(state,
       `[후원 효과] ${pname} 후원 ${f.donationSize}개 — ${f.deltaPct >= 0 ? "+" : ""}${f.deltaPct.toFixed(1)}% (누적 보정률 ${(f.after * 100).toFixed(1)}%)`
     );
   });
@@ -965,6 +996,7 @@ module.exports = {
   TOLL_MULT,
   START_CASH,
   GO_BONUS,
+  pushLog,
   initState,
   applyPlayerAction,
   runBotsIfNeeded,
