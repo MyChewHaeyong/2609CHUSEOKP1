@@ -655,7 +655,7 @@ function applyEventChoice(state, playerId, choice, now) {
   state.pendingEvent = null;
 }
 function itemLabel(item) {
-  return { "toll-free": "통행료 면제권", reroll: "주사위 재굴림권", "half-build": "건설비 반값권" }[item] || item;
+  return { "toll-free": "통행료 면제권", reroll: "주사위 한번 더!", "half-build": "건설비 반값권" }[item] || item;
 }
 
 // 통행료 면제권을 실제로 쓸지 말지 확정 짓고 통행료를 정산합니다. useItem이 true이고
@@ -974,9 +974,9 @@ function applyPlayerAction(state, playerId, type, payload, now) {
       if (state.turnPhase !== "awaiting-endturn") throw new Error("지금은 아이템을 쓸 수 없습니다.");
       if (payload?.item !== "reroll") throw new Error("지금 쓸 수 있는 아이템이 아닙니다.");
       const idx = p.items.indexOf("reroll");
-      if (idx === -1) throw new Error("보유한 재굴림권이 없습니다.");
+      if (idx === -1) throw new Error("보유한 '주사위 한번 더!'가 없습니다.");
       p.items.splice(idx, 1);
-      pushLog(state, `${p.name}: 주사위 재굴림권 사용`);
+      pushLog(state, `${p.name}: 주사위 한번 더! 사용`);
       state.turnPhase = "awaiting-roll";
       applyRoll(state, playerId, now);
       break;
