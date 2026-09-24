@@ -957,39 +957,6 @@ app.post("/api/rooms/:code/admin/force-end", (req, res) => {
   res.json({ ok: true, stateVersion: newVersion, state });
 });
 
-// 1부 결과 팝업에서 "2부로 이동" 링크를 보여주기 위해, 1부 방에 2부(차례상 경매) 방 코드를
-// 연결해둡니다(요청: "1부 결과 팝업에서 그대로 2부 넘어갈 수 있는 링크"). 1부와 2부는 서로
-// 완전히 다른 방(코드도 별도)이라 시스템이 자동으로 알 수 없으므로, 관리자가 2부 방을 만든
-// 뒤 그 코드를 여기로 한 번 연결해두면 — 그 뒤로는 1부의 모든 참가자 화면이 폴링으로 이
-// 값을 받아서, 최종 순위 팝업에 "2부로 이동" 버튼을 자동으로 보여줍니다(player.html의
-// renderRanking 참고). auctionRoomCode를 빈 문자열로 보내면 연결을 해제합니다. 대상 코드가
-// 실제로 존재하고 2부(auction) 방이 맞는지 미리 확인해서, 오타로 엉뚱하거나 없는 방을
-// 연결해버리는 실수를 막습니다.
-app.post("/api/rooms/:code/admin/link-auction-room", (req, res) => {
-  const room = getRoom(req.params.code);
-  if (!room) return res.status(404).json({ ok: false, error: "존재하지 않는 방 코드입니다." });
-  if (!requireAdmin(req, res, room)) return;
-  if (room.game_mode !== "paldomarble") {
-    return res.status(400).json({ ok: false, error: "이 방은 팔도마블 방이 아닙니다." });
-  }
-
-  const raw = (req.body?.auctionRoomCode || "").trim().toUpperCase();
-  if (raw) {
-    const target = getRoom(raw);
-    if (!target) return res.status(400).json({ ok: false, error: "그 코드의 방을 찾을 수 없습니다. 2부 방 코드가 맞는지 확인해주세요." });
-    if (target.game_mode !== "auction") {
-      return res.status(400).json({ ok: false, error: "그 방은 2부(차례상 경매) 방이 아닙니다." });
-    }
-  }
-
-  const state = JSON.parse(room.state_json);
-  state.linkedAuctionRoomCode = raw || null;
-  Game.pushLog(state, raw ? `[관리자] 2부(차례상 경매) 방(${raw})을 연결했습니다.` : "[관리자] 연결된 2부 방을 해제했습니다.");
-  const newVersion = persistState(room, state, raw ? `2부 방 연결(${raw})` : "2부 방 연결 해제", room.status);
-
-  res.json({ ok: true, stateVersion: newVersion, state, linkedAuctionRoomCode: state.linkedAuctionRoomCode });
-});
-
 // 관리자가 특정 참가자를 원하는 칸으로 즉시 이동시키는 기능(사용자 확정 사항).
 app.post("/api/rooms/:code/admin/move-player", (req, res) => {
   const room = getRoom(req.params.code);
